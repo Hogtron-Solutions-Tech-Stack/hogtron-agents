@@ -5,7 +5,7 @@ aliases: [docs, agent-docs]
 
 # HogTron Agentic System — Docs
 
-Start here. Everything in this folder is plain Markdown with [[wiki-style]] links so it works as an Obsidian vault for RAG.
+Start here. Everything in this folder is plain Markdown with wiki-style links so it works as an Obsidian vault for RAG.
 
 ## Read in this order
 
