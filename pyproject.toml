@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.40",
     "pydantic>=2.0",
+    "rapidfuzz>=3.0",
+    "requests>=2.31",
 ]
 
 [tool.setuptools.packages.find]
