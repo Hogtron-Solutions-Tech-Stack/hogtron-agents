@@ -12,7 +12,10 @@ from typing import Callable, Optional
 
 from .briefs import ResearchBrief, ResearchFinding, ResearchKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _ip_clear, _geo_audit, _platform_presence, _seo_audit
+from . import (
+    _ip_clear, _geo_audit, _platform_presence, _seo_audit,
+    _cluster_concepts, _trend_signals, _find_leads,
+)
 from ._ip_clear import TMProvider
 
 Handler = Callable[["Research", ResearchBrief], ResearchFinding]
@@ -56,27 +59,15 @@ def _do_ip_clear(self: Research, brief: ResearchBrief) -> ResearchFinding:
 
 
 def _do_trend_signals(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: FactoryHQ/agents/researcher.py discover() + tools/etsy_search.py.
-    Scrapes Etsy/Pinterest/Reddit → raw_signals."""
-    raise NotImplementedError(
-        "trend_signals pending migration from FactoryHQ/agents/researcher.py discover()"
-    )
+    return _trend_signals.trend_signals(brief)
 
 
 def _do_cluster_concepts(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: FactoryHQ/agents/researcher.py synthesize().
-    Claude clusters raw_signals into concepts + phrase candidates."""
-    raise NotImplementedError(
-        "cluster_concepts pending migration from FactoryHQ/agents/researcher.py synthesize()"
-    )
+    return _cluster_concepts.cluster_concepts(brief)
 
 
 def _do_find_leads(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: hogtron-dashboard/tools/lead_scraper.py.
-    Google Places API + OSM Overpass fallback by zip / city+state / county+state."""
-    raise NotImplementedError(
-        "find_leads pending migration from hogtron-dashboard/tools/lead_scraper.py"
-    )
+    return _find_leads.find_leads(brief)
 
 
 def _do_seo_audit(self: Research, brief: ResearchBrief) -> ResearchFinding:
