@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from .briefs import ResearchBrief, ResearchFinding, ResearchKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _ip_clear
+from . import _ip_clear, _geo_audit, _platform_presence, _seo_audit
 from ._ip_clear import TMProvider
 
 Handler = Callable[["Research", ResearchBrief], ResearchFinding]
@@ -80,22 +80,12 @@ def _do_find_leads(self: Research, brief: ResearchBrief) -> ResearchFinding:
 
 
 def _do_seo_audit(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: hogtron-dashboard/tools/seo_audit.py."""
-    raise NotImplementedError(
-        "seo_audit pending migration from hogtron-dashboard/tools/seo_audit.py"
-    )
+    return _seo_audit.seo_audit(brief)
 
 
 def _do_geo_audit(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: hogtron-dashboard/tools/geo_audit.py + deployed geo-auditor service."""
-    raise NotImplementedError(
-        "geo_audit pending migration from hogtron-dashboard/tools/geo_audit.py"
-    )
+    return _geo_audit.geo_audit(brief)
 
 
 def _do_platform_presence(self: Research, brief: ResearchBrief) -> ResearchFinding:
-    """Port target: hogtron-dashboard/tools/aggregator_audit/. SerpAPI site-restricted
-    Google queries to detect DoorDash/UberEats/GrubHub/Postmates listings."""
-    raise NotImplementedError(
-        "platform_presence pending migration from hogtron-dashboard/tools/aggregator_audit/"
-    )
+    return _platform_presence.platform_presence(brief)
