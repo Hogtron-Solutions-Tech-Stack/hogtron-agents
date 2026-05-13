@@ -40,9 +40,10 @@ aliases: [status, what-next]
 ## Next up
 
 ### Immediate (sessions 1-2)
-- [ ] **Apify decision** — either (a) bring Apify into Research's `seo_audit` + `find_leads`, or (b) accept the dashboard keeps its richer tools long-term. Drives whether seo_audit + lead_scraper get migrated. Only Research caller migration left after this decision.
-- [ ] Live-test the migrated Researcher end-to-end (run `python -m agents.researcher discover` → `synthesize` → `vet` on a small batch and confirm parity with pre-migration behavior).
-- [ ] Live-test `cluster_concepts` once a real signal corpus is freshly scraped (covered by the above).
+- [x] **Apify decision** — chose **option (b)**: dashboard keeps its richer tools (`seo_audit`, `lead_scraper`) as-is. Apify's ROI only justifies the cost+latency for JS-rendered SEO audits; for email enrichment and Maps fallback it loses to plain HTTP + Google Places. If Research ever needs JS-rendered scraping, we add a `WebScraperProvider` Protocol (same shape as `TMProvider`) and inject Apify from the caller. Two callers stay deferred: `seo_audit.py`, `lead_scraper.py`. No further migration churn here.
+- [x] **Live-test the migrated Researcher end-to-end** (2026-05-12). Phases 2 + 3 ran cleanly. Phase 1 hit Etsy bot-detection (403) — not a migration issue. Two bugs caught + fixed during the test (Postgres SQL compat: `f708fc0`; error-logging order: `4144757`). Claude correctly prioritized seasonal windows when given empty signals. All 46 phrases cleared due to pre-existing `tm_marks` empty-table issue — see below.
+- [ ] **Migrate `tm_marks` USPTO data to Supabase**. Pre-existing debt surfaced by the live test: the 1.67M-mark USPTO corpus is loaded only in the local SQLite file, not Supabase Postgres. `ip_clear` runs cleanly through the dispatcher but matches nothing because the table is empty. Either re-import the USPTO bulk download into Supabase or keep tm_marks in SQLite with a hybrid connection. Until resolved, IP clearance is **blocklist-only** in production — characters/brands/lyrics still caught, but TM strikes won't be.
+- [ ] **Etsy scraping** — currently 403'd. Options: rotate UA, add residential proxy, switch to SerpAPI-style indirect approach for trend_signals (`site:etsy.com` queries). Same pattern used for `platform_presence` already.
 - [ ] Live-test `find_leads` once GCP billing is unpaused OR via OSM-only path.
 - [ ] **PDF pipeline migration** — `FactoryHQ/agents/pdf_researcher.py` still uses `etsy_search.search()` + `blocklist.check()` directly. Same migration shape as `researcher.py`.
 
