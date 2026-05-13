@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import OperationsBrief, OperationsResult, OperationsKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _printify_upload
+from . import _printify_upload, _publish_etsy, _publish_pinterest, _render_video
 
 Handler = Callable[["Operations", OperationsBrief], OperationsResult]
 
@@ -48,12 +48,7 @@ def _do_printify_upload(self: Operations, brief: OperationsBrief) -> OperationsR
 
 
 def _do_publish_etsy(self: Operations, brief: OperationsBrief) -> OperationsResult:
-    """Port target: FactoryHQ/agents/marketer.py publish(). Single API call
-    to Printify's publish_product endpoint that pushes a draft to the
-    linked Etsy shop."""
-    raise NotImplementedError(
-        "publish_etsy pending migration from FactoryHQ/agents/marketer.py publish()"
-    )
+    return _publish_etsy.publish_etsy(brief)
 
 
 def _do_publish_shopify(self: Operations, brief: OperationsBrief) -> OperationsResult:
@@ -63,20 +58,11 @@ def _do_publish_shopify(self: Operations, brief: OperationsBrief) -> OperationsR
 
 
 def _do_publish_pinterest(self: Operations, brief: OperationsBrief) -> OperationsResult:
-    """Port target: FactoryHQ/agents/pinterester.py. Cross-post each
-    published Etsy listing to relevant Pinterest boards. Pinterest API
-    trial access still pending per project memory."""
-    raise NotImplementedError(
-        "publish_pinterest pending migration from FactoryHQ/agents/pinterester.py"
-    )
+    return _publish_pinterest.publish_pinterest(brief)
 
 
 def _do_render_video(self: Operations, brief: OperationsBrief) -> OperationsResult:
-    """Port target: FactoryHQ/agents/distributor.py + tools/video.py. Ken
-    Burns vertical MP4 from product mockups via ffmpeg + PIL compositor."""
-    raise NotImplementedError(
-        "render_video pending migration from FactoryHQ/agents/distributor.py"
-    )
+    return _render_video.render_video(brief)
 
 
 def _do_deploy_mockup(self: Operations, brief: OperationsBrief) -> OperationsResult:

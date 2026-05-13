@@ -13,6 +13,8 @@ dependencies = [
     "rapidfuzz>=3.0",
     "requests>=2.31",
     "beautifulsoup4>=4.12",
+    "imageio-ffmpeg>=0.5",
+    "Pillow>=10.0",
 ]
 
 [tool.setuptools.packages.find]

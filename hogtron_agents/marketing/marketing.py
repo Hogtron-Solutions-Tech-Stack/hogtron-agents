@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import MarketingBrief, MarketingAsset, MarketingKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _etsy_listing
+from . import _etsy_listing, _social_post
 
 Handler = Callable[["Marketing", MarketingBrief], MarketingAsset]
 
@@ -47,10 +47,7 @@ def _do_etsy_listing(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
 
 
 def _do_social_post(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
-    """Port target: FactoryHQ/agents/pinterester.py — Pinterest pin titles + descriptions."""
-    raise NotImplementedError(
-        "social_post pending migration from FactoryHQ/agents/pinterester.py"
-    )
+    return _social_post.social_post(brief)
 
 
 def _do_blog_post(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
