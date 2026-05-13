@@ -45,19 +45,26 @@ def publish_pinterest(brief: OperationsBrief) -> OperationsResult:
     """Create a Pinterest pin linking back to an external destination.
 
     brief.payload:
-      board_id (required) — destination Pinterest board id
       title (required, max 100)
       description (required, max 500)
       link (required) — destination URL (typically the Etsy listing)
       image_url (required) — pin image URL (Printify mockup, etc.)
+      board_id (optional, falls back to env PINTEREST_BOARD_ID)
       alt_text (optional, max 200)
     brief.context:
       pinterest_access_token (optional, falls back to env PINTEREST_ACCESS_TOKEN)
     """
-    required = ("board_id", "title", "description", "link", "image_url")
-    missing = [k for k in required if not brief.payload.get(k)]
+    base_required = ("title", "description", "link", "image_url")
+    missing = [k for k in base_required if not brief.payload.get(k)]
     if missing:
         raise ValueError(f"publish_pinterest brief.payload missing: {missing}")
+
+    board_id = brief.payload.get("board_id") or os.environ.get("PINTEREST_BOARD_ID")
+    if not board_id:
+        return OperationsResult(
+            kind="publish_pinterest", success=False,
+            error="board_id not in payload and PINTEREST_BOARD_ID not in env",
+        )
 
     token = (
         brief.context.get("pinterest_access_token")
@@ -70,7 +77,7 @@ def publish_pinterest(brief: OperationsBrief) -> OperationsResult:
         )
 
     body = {
-        "board_id": brief.payload["board_id"],
+        "board_id": board_id,
         "title": brief.payload["title"][:100],
         "description": brief.payload["description"][:500],
         "link": brief.payload["link"],
@@ -113,7 +120,7 @@ def publish_pinterest(brief: OperationsBrief) -> OperationsResult:
         payload={
             "pin_id": pin_id,
             "pin_url": pin_url,
-            "board_id": brief.payload["board_id"],
+            "board_id": board_id,
             "link": brief.payload["link"],
         },
         cost_estimate_usd=0.0,  # Pinterest API is free

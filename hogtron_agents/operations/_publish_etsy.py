@@ -34,21 +34,21 @@ def publish_etsy(brief: OperationsBrief) -> OperationsResult:
     """Push an existing Printify draft to its linked Etsy shop.
 
     brief.payload:
-      shop_id (required) — Printify shop id
       product_id (required) — Printify product id to publish
-      title (optional, default True) — include title in publish
-      description (optional, default True) — include description
-      images (optional, default True) — include mockup images
-      variants (optional, default True) — include variants
-      tags (optional, default True) — include tags
+      shop_id (optional, falls back to env PRINTIFY_SHOP_ID)
+      title / description / images / variants / tags (optional bool flags, default True)
     brief.context:
       printify_api_key (optional, falls back to env PRINTIFY_API_KEY)
     """
-    shop_id = brief.payload.get("shop_id")
     product_id = brief.payload.get("product_id")
-    if not shop_id or not product_id:
-        raise ValueError(
-            "publish_etsy brief.payload must include 'shop_id' and 'product_id'"
+    if not product_id:
+        raise ValueError("publish_etsy brief.payload must include 'product_id'")
+
+    shop_id = brief.payload.get("shop_id") or os.environ.get("PRINTIFY_SHOP_ID")
+    if not shop_id:
+        return OperationsResult(
+            kind="publish_etsy", success=False,
+            error="shop_id not in payload and PRINTIFY_SHOP_ID not in env",
         )
 
     api_key = (

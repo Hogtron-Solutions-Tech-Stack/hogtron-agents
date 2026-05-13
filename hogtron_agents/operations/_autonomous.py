@@ -96,25 +96,40 @@ def build_tools(operations_instance) -> tuple[list[OperationsResult], list[Agent
         AgentTool(
             name="printify_upload",
             description=(
-                "Upload art + create a Printify DRAFT product. Free. "
-                "Reversible. Returns {image_id, product_id, mockup_url}."
+                "Upload art + create a Printify DRAFT product. Free, reversible. "
+                "Returns {image_id, product_id, mockup_url}. "
+                "shop_id / variant_ids / blueprint_id / print_provider_id all "
+                "fall back to the configured env (PRINTIFY_SHOP_ID, "
+                "PRINTIFY_DEFAULT_VARIANT_IDS, etc.) — omit them unless "
+                "the directive specifies a non-default shop."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "art_local_path": {"type": "string"},
                     "file_name": {"type": "string"},
-                    "shop_id": {"type": "string"},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
                     "placement_y": {"type": "number", "default": 0.35},
-                    "blueprint_id": {"type": "integer", "default": 384},
-                    "print_provider_id": {"type": "integer", "default": 29},
-                    "variant_ids": {"type": "array", "items": {"type": "integer"}},
+                    "shop_id": {
+                        "type": "string",
+                        "description": "Optional. Defaults to env PRINTIFY_SHOP_ID.",
+                    },
+                    "variant_ids": {
+                        "type": "array", "items": {"type": "integer"},
+                        "description": "Optional. Defaults to env PRINTIFY_DEFAULT_VARIANT_IDS.",
+                    },
+                    "blueprint_id": {
+                        "type": "integer",
+                        "description": "Optional. Defaults to env PRINTIFY_BLUEPRINT_ID or 384.",
+                    },
+                    "print_provider_id": {
+                        "type": "integer",
+                        "description": "Optional. Defaults to env PRINTIFY_PRINT_PROVIDER_ID or 29.",
+                    },
                 },
-                "required": ["art_local_path", "file_name", "shop_id",
-                             "title", "description", "variant_ids"],
+                "required": ["art_local_path", "file_name", "title", "description"],
             },
             handler=lambda **kw: _call("printify_upload", kw),
         ),
@@ -123,38 +138,48 @@ def build_tools(operations_instance) -> tuple[list[OperationsResult], list[Agent
             description=(
                 "Push an existing Printify draft to its linked Etsy shop. "
                 "PUBLIC, costs $0.20 + 6.5% commission. Per autonomy ladder, "
-                "ONLY call when the directive explicitly authorizes publishing."
+                "ONLY call when the directive explicitly authorizes publishing. "
+                "shop_id falls back to env PRINTIFY_SHOP_ID."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "shop_id": {"type": "string"},
                     "product_id": {"type": "string"},
+                    "shop_id": {
+                        "type": "string",
+                        "description": "Optional. Defaults to env PRINTIFY_SHOP_ID.",
+                    },
                 },
-                "required": ["shop_id", "product_id"],
+                "required": ["product_id"],
             },
-            handler=lambda shop_id, product_id: _call(
-                "publish_etsy", {"shop_id": shop_id, "product_id": product_id},
+            handler=lambda product_id, shop_id=None: _call(
+                "publish_etsy",
+                {"product_id": product_id, "shop_id": shop_id} if shop_id
+                else {"product_id": product_id},
             ),
         ),
         AgentTool(
             name="publish_pinterest",
             description=(
                 "Create a Pinterest pin linking to a destination (typically "
-                "an Etsy listing). Free. Visible. Per autonomy ladder, ONLY "
-                "call when the directive explicitly authorizes publishing."
+                "an Etsy listing). Free, visible. Per autonomy ladder, ONLY "
+                "call when the directive explicitly authorizes publishing. "
+                "board_id falls back to env PINTEREST_BOARD_ID."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "board_id": {"type": "string"},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "link": {"type": "string"},
                     "image_url": {"type": "string"},
                     "alt_text": {"type": "string"},
+                    "board_id": {
+                        "type": "string",
+                        "description": "Optional. Defaults to env PINTEREST_BOARD_ID.",
+                    },
                 },
-                "required": ["board_id", "title", "description", "link", "image_url"],
+                "required": ["title", "description", "link", "image_url"],
             },
             handler=lambda **kw: _call("publish_pinterest", kw),
         ),
