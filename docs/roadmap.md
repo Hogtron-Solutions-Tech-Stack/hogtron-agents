@@ -70,7 +70,11 @@ aliases: [status, what-next]
 - [ ] **Live-test `find_leads`** once GCP billing is unpaused OR via OSM-only path.
 - [ ] **PDF pipeline migration** — `FactoryHQ/agents/pdf_researcher.py` still uses `etsy_search.search()` + `blocklist.check()` directly. Same migration shape as `researcher.py`.
 - [ ] **Caller migrations for new departments** — FactoryHQ marketer.py → Marketing dept, FactoryHQ designer.py:upload() → Operations.printify_upload, dashboard aggregator_audit route → Sales.aggregator_audit_report.
-- [ ] **Re-run end-to-end Researcher test** now that `tm_marks` has real data + `trend_signals` has a working backend.
+- [x] **Re-run end-to-end Researcher test** (2026-05-12, second pass). Full pipeline produced **real** results this time:
+  - Phase 1 (discover via SerpAPI): 8 signals from `plant mom shirt` in 5s after fixing key forwarding in `FactoryHQ/agents/researcher.py` (commit `1cd80e5`). The first attempt fell through to the `direct` backend because `SERPAPI_API_KEY` wasn't forwarded via `brief.context`. Same pattern as `anthropic_api_key` in `synthesize`.
+  - Phase 2 (synthesize via Claude): 3 concepts, 25s. Claude prioritized Father's Day + Graduation + Memorial Day correctly.
+  - Phase 3 (vet_pending against real tm_marks): **3 of 18 phrases tm_fail'd** (17% strike-risk rejection rate). Real catches: "World's Okayest Dad" (1 mark), "Class of 2026: We Made It Weird" (2 marks), "Land of the Free, Home of the Grill" (3 marks), "Pour Decisions: A Teacher's Summer" (2 marks). These would have shipped to Etsy under the pre-migration trivially-clear regime.
+  - DB state at end of run: 17 concepts in vetting, 10 tm_fail phrases, 85 cleared phrases, 61 queued briefs. **The full Research pipeline is functional in production.**
 
 ### Week 2 — Marketing department
 - [ ] Port `etsy_listing` from FactoryHQ/agents/marketer.py
