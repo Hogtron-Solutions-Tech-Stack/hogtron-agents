@@ -27,9 +27,9 @@ aliases: [status, what-next]
 **Caller migrations to Research (proof points)**
 - ✅ `hogtron-dashboard/tools/geo_audit.py` — delegates to Research (commit `d8bca1b`). Plugin shape preserved; route handler unchanged.
 - ✅ `hogtron-dashboard/tools/aggregator_audit/checkers/platform_checks.py::check_all_platforms` — delegates to Research (commit `d8bca1b`). Single-platform helpers + LISTING_PATTERNS preserved for direct callers.
-- ⏸️ `hogtron-dashboard/tools/seo_audit.py` — **deferred**. Has opt-in Apify branch Research v1 doesn't support; migrating would silently drop a feature. See decision below.
+- ✅ `FactoryHQ/agents/researcher.py` — **all three phases migrated** (commit `c50d30b`). discover→trend_signals, synthesize→cluster_concepts, vet_pending→ip_clear. Sean's `research_blanks` + `research_pod_lineup` WIP committed first as `e6d0832`. New `FactoryHQ/tools/tm_provider.py` adapts SQLite tm_marks to the Research TMProvider Protocol — the one file that changes when tm_marks moves to Supabase.
+- ⏸️ `hogtron-dashboard/tools/seo_audit.py` — **deferred**. Has opt-in Apify branch Research v1 doesn't support; migrating would silently drop a feature.
 - ⏸️ `hogtron-dashboard/tools/lead_scraper.py` — **deferred**. Has Foursquare + Apify + email enrichment beyond Research's `find_leads` v1 scope.
-- ⏸️ `FactoryHQ/agents/researcher.py` — **deferred**. Sean has uncommitted WIP edits; migration waits until those are committed.
 
 **Infrastructure**
 - ✅ Repo created: `C:\Users\sbilg\Code\hogtron-agents\` (6 commits)
@@ -40,10 +40,11 @@ aliases: [status, what-next]
 ## Next up
 
 ### Immediate (sessions 1-2)
-- [ ] **Resolve `FactoryHQ/agents/researcher.py` WIP** — Sean commits his local edits, then migrate `vet_pending()` / `discover()` / `synthesize()` to call Research (`ip_clear`, `trend_signals`, `cluster_concepts`).
-- [ ] **Apify decision** — either (a) bring Apify into Research's `seo_audit` + `find_leads`, or (b) accept the dashboard keeps its richer tools long-term. Drives whether seo_audit + lead_scraper get migrated.
-- [ ] Live-test `cluster_concepts` once a real signal corpus is freshly scraped
-- [ ] Live-test `find_leads` once GCP billing is unpaused OR via OSM-only path
+- [ ] **Apify decision** — either (a) bring Apify into Research's `seo_audit` + `find_leads`, or (b) accept the dashboard keeps its richer tools long-term. Drives whether seo_audit + lead_scraper get migrated. Only Research caller migration left after this decision.
+- [ ] Live-test the migrated Researcher end-to-end (run `python -m agents.researcher discover` → `synthesize` → `vet` on a small batch and confirm parity with pre-migration behavior).
+- [ ] Live-test `cluster_concepts` once a real signal corpus is freshly scraped (covered by the above).
+- [ ] Live-test `find_leads` once GCP billing is unpaused OR via OSM-only path.
+- [ ] **PDF pipeline migration** — `FactoryHQ/agents/pdf_researcher.py` still uses `etsy_search.search()` + `blocklist.check()` directly. Same migration shape as `researcher.py`.
 
 ### Week 2 — Marketing department
 - [ ] Port `etsy_listing` from FactoryHQ/agents/marketer.py

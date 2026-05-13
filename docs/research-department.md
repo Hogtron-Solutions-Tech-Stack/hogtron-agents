@@ -175,4 +175,16 @@ The reference implementation against FactoryHQ's SQLite tm_marks is in this sess
 
 **hogtron-dashboard/tools/lead_scraper.py** — ⏸️ **deferred**. Has Foursquare + Apify + email enrichment beyond Research's `find_leads` v1 scope.
 
-**FactoryHQ/agents/researcher.py** — ⏸️ **deferred**. Sean has uncommitted local edits there; migration waits until those are committed. Plan: same shape as `designer.py` did — keep the DB queue runner + status state machine, replace the Claude/scraping work with `Research.do()` calls (`ip_clear` in `vet_pending`, `trend_signals` in `discover`, `cluster_concepts` in `synthesize`).
+**FactoryHQ/agents/researcher.py** — ✅ **all three phases migrated** (commit `c50d30b`). Same pattern as `designer.py`: queue runner + DB writes + state machine + tm_checks cache stayed in `researcher.py`; the three phases now delegate to Research:
+
+| Phase | Before | After |
+|---|---|---|
+| `discover()` | per-query `etsy_search.search()` loop | one `Research.do(trend_signals)` call |
+| `synthesize()` | direct `anthropic.Anthropic().messages.parse()` with local Pydantic schemas + 60-line SYSTEM_PROMPT | one `Research.do(cluster_concepts)` call |
+| `vet_pending()` | `blocklist.check()` + `trademark_check.check()` per phrase | one `Research.do(ip_clear)` call per phrase, with the local `tm_checks` cache preserved as inline `_tm_cache_get`/`_tm_cache_put` helpers (kept in FactoryHQ — caller owns caching per [[patterns#the-stateless-departments-stateful-callers]]) |
+
+The `_Phrase` / `_Concept` / `_SynthesisOutput` Pydantic schemas, the synthesis SYSTEM_PROMPT, and `_build_user_prompt` are all gone from `researcher.py` — single source of truth now lives in `hogtron_agents.research._cluster_concepts`.
+
+**New adapter:** `FactoryHQ/tools/tm_provider.py` contains `FactorySQLiteTMProvider`, satisfying the `TMProvider` Protocol against FactoryHQ's SQLite `tm_marks` table. The one file that needs to change when tm_marks moves to Supabase per [[infra]].
+
+**Sean's WIP first:** before migrating, the `research_blanks()` + `research_pod_lineup()` functions (Adam picking shirt blanks for HogTron merch + recommending color/blueprint expansion for CottonForgeBoutique) were committed as `e6d0832` to keep authorship clean.
