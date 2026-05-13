@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import OperationsBrief, OperationsResult, OperationsKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _printify_upload, _publish_etsy, _publish_pinterest, _render_video
+from . import _printify_upload, _publish_etsy, _publish_pinterest, _render_video, _autonomous
 
 Handler = Callable[["Operations", OperationsBrief], OperationsResult]
 
@@ -39,6 +39,19 @@ class Operations:
 
     def register(self, kind: OperationsKind, handler: Handler) -> None:
         self._handlers[kind] = handler
+
+    def run_autonomous(self, directive: str, *, anthropic_api_key: str,
+                       model: str = "claude-opus-4-7", max_iterations: int = 10):
+        """Layer 2 — chain Operations kinds in response to a directive.
+
+        WARNING: every Operations kind has real-world side effects. The
+        system prompt biases toward the autonomy ladder (rung 0: hold
+        publish_* until human approval), but a directive can override.
+        Layer 3 callers should typically use dry_run flows until rung 2+."""
+        return _autonomous.run_autonomous(
+            self, directive, anthropic_api_key=anthropic_api_key,
+            model=model, max_iterations=max_iterations,
+        )
 
 
 # --- Handlers -----------------------------------------------------------

@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 from .briefs import SalesBrief, SalesAsset, SalesKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _aggregator_audit_report
+from . import _aggregator_audit_report, _autonomous
 
 Handler = Callable[["Sales", SalesBrief], SalesAsset]
 
@@ -36,6 +36,14 @@ class Sales:
 
     def register(self, kind: SalesKind, handler: Handler) -> None:
         self._handlers[kind] = handler
+
+    def run_autonomous(self, directive: str, *, anthropic_api_key: str,
+                       model: str = "claude-opus-4-7", max_iterations: int = 8):
+        """Layer 2 — chain Sales kinds in response to a directive."""
+        return _autonomous.run_autonomous(
+            self, directive, anthropic_api_key=anthropic_api_key,
+            model=model, max_iterations=max_iterations,
+        )
 
 
 # --- Handlers -----------------------------------------------------------

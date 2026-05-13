@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import MarketingBrief, MarketingAsset, MarketingKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _etsy_listing, _social_post
+from . import _etsy_listing, _social_post, _autonomous
 
 Handler = Callable[["Marketing", MarketingBrief], MarketingAsset]
 
@@ -38,6 +38,14 @@ class Marketing:
 
     def register(self, kind: MarketingKind, handler: Handler) -> None:
         self._handlers[kind] = handler
+
+    def run_autonomous(self, directive: str, *, anthropic_api_key: str,
+                       model: str = "claude-opus-4-7", max_iterations: int = 8):
+        """Layer 2 — chain Marketing kinds in response to a directive."""
+        return _autonomous.run_autonomous(
+            self, directive, anthropic_api_key=anthropic_api_key,
+            model=model, max_iterations=max_iterations,
+        )
 
 
 # --- Handlers -----------------------------------------------------------

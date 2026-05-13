@@ -13,7 +13,7 @@ from typing import Callable, Optional
 
 from .briefs import CreativeBrief, CreativeAsset, BriefKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _shirt
+from . import _shirt, _autonomous
 
 Handler = Callable[["Creative", CreativeBrief], CreativeAsset]
 
@@ -42,6 +42,14 @@ class Creative:
     def register(self, kind: BriefKind, handler: Handler) -> None:
         """Override or add a handler at runtime. Useful for tests and migration."""
         self._handlers[kind] = handler
+
+    def run_autonomous(self, directive: str, *, anthropic_api_key: str,
+                       model: str = "claude-opus-4-7", max_iterations: int = 8):
+        """Layer 2 — chain Creative kinds in response to a directive."""
+        return _autonomous.run_autonomous(
+            self, directive, anthropic_api_key=anthropic_api_key,
+            model=model, max_iterations=max_iterations,
+        )
 
 
 # --- Handlers (stubs during pilot; ported from FactoryHQ in follow-up) ---
