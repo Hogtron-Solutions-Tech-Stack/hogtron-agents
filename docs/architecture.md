@@ -88,19 +88,41 @@ Internally the loop has Layer 1 kinds exposed as Claude tools (`tool_use` API). 
 Next: pilot Layer 2 on Marketing, Sales, Operations, Creative. Same shape — each gets a `run_autonomous(directive)` method, hand-tuned system prompt + tool JSON schemas.
 
 ### Layer 3 — CEO loop (cross-department orchestration)
-**The "fully autonomous" piece.**
+**Shipped 2026-05-12 (commit `0a2e5b7`).**
 
-One outer Claude Agent loop with Sean + Anthony's voice in the system prompt. Holds company goals, the calendar, a budget, the Journal. Dispatches directives across departments:
+One outer Claude tool-use loop with Sean + Anthony's voice in the system prompt. Tools are the 5 departments' `run_autonomous()` methods. Each CEO tool call is itself a Layer 2 agent loop, so costs and iterations compound.
 
+```python
+from hogtron_agents.ceo import CEO
+from hogtron_agents.research import Research
+# ... etc
+
+ceo = CEO(
+    research=Research(tm_provider=...),
+    creative=Creative(),
+    marketing=Marketing(),
+    sales=Sales(),
+    operations=Operations(),
+)
+
+result = ceo.run_autonomous(
+    "Find an IP-clear Father's Day grilling shirt phrase, design it, "
+    "write Etsy + Pinterest copy. Hold publishing.",
+    anthropic_api_key=...,
+)
+print(result.summary)         # journal-ready
+print(result.dept_calls)      # per-dept breakdown with iter/cost
+print(result.cost_usd)        # CEO + all nested dept Claude tokens
+print(result.ops_cost_usd)    # real-world spend (Etsy fees, etc.)
 ```
-CEO loop wakes up daily ➜
-  read company state (live listings, pipeline, revenue, holidays approaching)
-  decide priorities for the day
-  fire Research.run_autonomous(...) + Marketing.run_autonomous(...) in parallel
-  consolidate findings + write a Journal entry
-```
 
-Built last. Requires all 5 departments at Layer 1, ideally 2+ at Layer 2.
+**SYSTEM_PROMPT** holds Sean + Anthony's voice + company context: 2 product lines (Factory + Agency), 5 departments with one-line responsibilities, autonomy-ladder rung 0 enforcement (HOLD publish_* without explicit auth), and the journal output format (**What I did** / **What you'll find** / **Open items** / **Total cost**).
+
+**First live result (2026-05-12):**
+- Directive: "Find ONE IP-clear shirt phrase for Father day grilling. Have Creative design the shirt. Have Marketing write both Etsy listing + Pinterest copy. HOLD all publishing. Keep Research efficient: 1 trend query is enough."
+- CEO 4 iter, 161s, $1.08 total Claude (Research $0.39 + Creative $0.11 + Marketing $0.23 + CEO orchestration $0.35)
+- Outcome: "Smoke Ring Enthusiast" cleared + designed + listing/pin copy written, publishing held per autonomy ladder
+- **The Layer 3 dividend**: the CEO autonomously surfaced 2 real downstream issues — Recraft output is 2048² but Printify wants 4500×5400 (needs upscale), and the listing description names a Bella+Canvas blank that needs verification. Exactly the kind of follow-up signals a journal entry needs without being asked.
 
 ---
 
