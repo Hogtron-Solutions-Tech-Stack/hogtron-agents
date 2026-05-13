@@ -7,6 +7,10 @@ aliases: [status, what-next]
 
 ## What shipped (2026-05-12)
 
+**All 5 departments scaffolded at Layer 1. 30 kinds total, 12 piloted with real handlers, 18 stubbed with port-target pointers.**
+
+
+
 **Creative department**
 - ✅ Package scaffolding (`hogtron_agents/`), pip-installable editable
 - ✅ `shirt` kind fully ported from FactoryHQ/agents/designer.py
@@ -31,11 +35,30 @@ aliases: [status, what-next]
 - ⏸️ `hogtron-dashboard/tools/seo_audit.py` — **deferred**. Has opt-in Apify branch Research v1 doesn't support; migrating would silently drop a feature.
 - ⏸️ `hogtron-dashboard/tools/lead_scraper.py` — **deferred**. Has Foursquare + Apify + email enrichment beyond Research's `find_leads` v1 scope.
 
+**Marketing department**
+- ✅ Dispatcher + 6 kinds wired (commit `09de5c9`)
+- ✅ `etsy_listing` ported from FactoryHQ/agents/marketer.py (Pydantic _Listing schema, Etsy SYSTEM_PROMPT, tag/title guardrails). Smoke-tested.
+- ⏳ `social_post`, `blog_post`, `review_response` stubbed with port-target pointers
+- ⏳ `ad_copy`, `email_outreach` stubbed as net-new
+
+**Sales department**
+- ✅ Dispatcher + 5 kinds wired (commit `f83de78`)
+- ✅ `aggregator_audit_report` ported from dashboard/tools/aggregator_audit/generator.py. Pure business logic: per-platform analysis, revenue projection with diminishing returns, ranked recommendations. Smoke+parity test against Tony's Pizza scenario passed.
+- ⏳ `proposal` stubbed (port from dashboard proposal generator)
+- ⏳ `follow_up`, `pricing_quote`, `contract` stubbed as net-new
+
+**Operations department**
+- ✅ Dispatcher + 7 kinds wired (commit `e0ea4c4`)
+- ✅ `printify_upload` ported from FactoryHQ/agents/designer.py upload(). Inlines Printify HTTP calls so the department is self-contained. Live test deferred (would create real Printify draft).
+- ⏳ `publish_etsy`, `publish_pinterest`, `render_video`, `deploy_mockup`, `deploy_proposal` stubbed with port-target pointers
+- ⏳ `publish_shopify` stubbed as net-new (Shopify account fresh as of 2026-05-12)
+- 💡 Every Operations kind carries `cost_estimate_usd` for Layer 3 budget caps
+
 **Infrastructure**
-- ✅ Repo created: `C:\Users\sbilg\Code\hogtron-agents\` (6 commits)
+- ✅ Repo: `C:\Users\sbilg\Code\hogtron-agents\` — 11 commits
 - ✅ Constraint locked: [[infra|Supabase for DB, Railway+subdomains for hosting]]
 - ✅ Constraint locked: client mockup URLs are frozen
-- ✅ Docs written (this folder) as Obsidian-friendly vault, mirrored into `Hogtron Solutions LLC/Agentic System/`
+- ✅ Docs written + mirrored into `Hogtron Solutions LLC/Agentic System/` (Obsidian RAG vault)
 
 ## Next up
 

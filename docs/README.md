@@ -12,11 +12,14 @@ Start here. Everything in this folder is plain Markdown with wiki-style links so
 1. [[overview]] — what the system is and why we built it (for Anthony, or anyone new)
 2. [[architecture]] — the 3-layer model (departments → agent loops → CEO loop) and the autonomy ladder
 3. [[patterns]] — how briefs, findings, dispatchers, and provider-injection work in code
-4. [[creative-department]] — the Creative department head (built first, full deep-dive)
-5. [[research-department]] — the Research department head (built second, 7 kinds)
-6. [[upcoming-departments]] — Marketing, Sales, Operations (planned)
-7. [[infra]] — Supabase + Railway + external accounts (Canva, Shopify, Etsy, etc.)
-8. [[roadmap]] — what's shipped, what's next
+4. [[creative-department]] — Creative dept (5 kinds, shirt piloted)
+5. [[research-department]] — Research dept (7 kinds, all ported)
+6. [[marketing-department]] — Marketing dept (6 kinds, etsy_listing piloted)
+7. [[sales-department]] — Sales dept (5 kinds, aggregator_audit_report piloted)
+8. [[operations-department]] — Operations dept (7 kinds, printify_upload piloted)
+9. [[upcoming-departments]] — future expansion candidates (Legal/Compliance, dedicated Canva)
+10. [[infra]] — Supabase + Railway + external accounts (Canva, Shopify, Etsy, etc.)
+11. [[roadmap]] — what's shipped, what's next
 
 ## Tags glossary
 
@@ -32,4 +35,4 @@ We have 13 product-line-specific agent scripts spread across two repos (FactoryH
 
 The departments live in a shared pip-installable package: `C:\Users\sbilg\Code\hogtron-agents\`. Both repos import from it. New product lines plug in for free.
 
-Status: Creative + Research shipped. Marketing, Sales, Operations queued.
+Status: **All 5 departments scaffolded** with 30 kinds total. 5 piloted with real handlers (shirt, ip_clear/geo_audit/seo_audit/platform_presence + 3 more in Research, etsy_listing, aggregator_audit_report, printify_upload). Remaining kinds stubbed with port-target pointers. Layer 1 of the [[architecture|3-layer model]] is complete in shape.

@@ -24,11 +24,11 @@ Five **department heads**, each a Python class in a shared package. Any product 
 
 | Department | What it does | Status |
 |---|---|---|
-| [[creative-department\|Creative]] | Visual production: shirts, mockups, proposals, PDFs, Canva | ✅ live (shirt kind) |
-| [[research-department\|Research]] | Intel: trends, leads, IP clearance, audits, platform detection | ✅ live (all 7 kinds) |
-| Marketing | Words that sell: listings, social copy, ads, reviews, blogs | ⏳ planned |
-| Sales | Closing motions: proposals, follow-ups, pricing, contracts | ⏳ planned |
-| Operations | Shipping things: publishing, deploys, scheduled jobs | ⏳ planned |
+| [[creative-department\|Creative]] | Visual production: shirts, mockups, proposals, PDFs, Canva | ✅ live (shirt piloted, 4 stubs) |
+| [[research-department\|Research]] | Intel: trends, leads, IP clearance, audits, platform detection | ✅ live (all 7 kinds ported) |
+| [[marketing-department\|Marketing]] | Words that sell: listings, social copy, ads, reviews, blogs | ✅ live (etsy_listing piloted, 5 stubs) |
+| [[sales-department\|Sales]] | Closing motions: proposals, audit reports, quotes, contracts | ✅ live (aggregator_audit_report piloted, 4 stubs) |
+| [[operations-department\|Operations]] | Shipping things: publishing, deploys, video, channel mgmt | ✅ live (printify_upload piloted, 6 stubs) |
 
 Sean and Anthony sit above as **CEOs** — strategic direction, approvals, calendar, customer relationships.
 
