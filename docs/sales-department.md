@@ -83,7 +83,9 @@ Each step is a department call. Sales doesn't *do* the upstream work — it comp
 
 ## Migration to existing callers
 
-**Pending.** The dashboard's `tools/aggregator_audit/generator.py::generate_audit()` is unchanged. Migration plan: have the route handler at `routes/aggregator_audit.py` call `Sales().build(SalesBrief(kind='aggregator_audit_report', ...))` instead, unwrap `asset.payload`, render to the existing Jinja template. The dashboard's `generator.py` becomes a thin re-export (or gets deleted) once parity is proven.
+**Shipped** (commit `2ad70d7` on hogtron-dashboard). `tools/aggregator_audit/generator.py` shrank from 267 → 99 lines. The `generate_audit()` function preserves its signature so the route handler at `routes/aggregator_audit.py:105` doesn't change — internally it now builds a `SalesBrief(kind='aggregator_audit_report', ...)` and unwraps `asset.payload`. The revenue benchmarks, cuisine filtering, per-platform analysis, projection logic, and recommendations build all live in Sales now. `PLATFORMS` / `PLATFORM_META` / `DEFAULT_HOGTRON_*` constants stayed in `generator.py` because the form template renders them.
+
+Parity verified by running the new + legacy paths side-by-side on Tony's Pizza scenario (DoorDash 4.5 / Grubhub 4.0 / UberEats missing / Slice missing) — identical JSON output. Legacy function deleted after parity check passed.
 
 ## Adding a new kind
 

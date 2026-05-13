@@ -76,7 +76,9 @@ After Claude returns, final guardrails kick in:
 
 ## Migration to existing callers
 
-**Pending.** `FactoryHQ/agents/marketer.py` still uses its inlined `_Listing` schema + SYSTEM_PROMPT. Migration plan: replace the per-row Claude call in `_write_listing_inner()` with `Marketing().write(MarketingBrief(...))`, keep the Printify push in marketer.py until `publish_etsy` ships in Operations.
+**Shipped** (commit `4029c56` on FactoryHQ). `agents/marketer.py` shrank from 263 → 203 lines. `write_listing()` is now a queue runner: fetches approved designs from DB, builds a `MarketingBrief(kind='etsy_listing', ...)` per row, delegates to `Marketing.write()`, pushes the returned title/description/tags to Printify, flips DB status to `listing_ready`. The `_Listing` schema, Etsy SYSTEM_PROMPT, and final guardrails (tag truncation, title length cap) all live in `_etsy_listing.py` now.
+
+`publish()` (Phase 2 — push Printify draft to Etsy) is unchanged. Will migrate to `Operations(publish_etsy)` when that handler ships.
 
 ## Adding a new kind
 

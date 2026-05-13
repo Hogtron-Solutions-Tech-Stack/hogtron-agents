@@ -69,7 +69,10 @@ aliases: [status, what-next]
 - [x] **Etsy scraping bypass** (commit `3d26ace`). Added SerpAPI backend to `trend_signals`: site-restricted Google queries (`<phrase> site:etsy.com`). ToS-clean, fast (~2s/query), not subject to Etsy's anti-bot defenses. Selected via `brief.context['backend']` = 'serpapi' | 'direct' | 'auto'. Auto picks serpapi when `SERPAPI_API_KEY` is set. Direct backend kept as fallback (only path that surfaces sales_badge data). **Verified**: 15 signals across 2 queries in 3.8s, zero errors.
 - [ ] **Live-test `find_leads`** once GCP billing is unpaused OR via OSM-only path.
 - [ ] **PDF pipeline migration** — `FactoryHQ/agents/pdf_researcher.py` still uses `etsy_search.search()` + `blocklist.check()` directly. Same migration shape as `researcher.py`.
-- [ ] **Caller migrations for new departments** — FactoryHQ marketer.py → Marketing dept, FactoryHQ designer.py:upload() → Operations.printify_upload, dashboard aggregator_audit route → Sales.aggregator_audit_report.
+- [x] **Caller migrations for new departments** (2026-05-12). Three completed:
+  - `hogtron-dashboard/tools/aggregator_audit/generator.py` → Sales (commit `2ad70d7`). 267 → 99 lines. Parity verified against Tony's Pizza scenario.
+  - `FactoryHQ/agents/marketer.py` → Marketing (commit `4029c56`). 263 → 203 lines. write_listing() now a queue runner around Marketing.write(etsy_listing); publish() unchanged pending Operations(publish_etsy).
+  - `FactoryHQ/agents/designer.py::upload()` → Operations (commit `37a0961`). Phase 3 now delegates to Operations.do(printify_upload). regenerate() still uses tools.printify directly — needs a future `printify_swap_image` kind.
 - [x] **Re-run end-to-end Researcher test** (2026-05-12, second pass). Full pipeline produced **real** results this time:
   - Phase 1 (discover via SerpAPI): 8 signals from `plant mom shirt` in 5s after fixing key forwarding in `FactoryHQ/agents/researcher.py` (commit `1cd80e5`). The first attempt fell through to the `direct` backend because `SERPAPI_API_KEY` wasn't forwarded via `brief.context`. Same pattern as `anthropic_api_key` in `synthesize`.
   - Phase 2 (synthesize via Claude): 3 concepts, 25s. Claude prioritized Father's Day + Graduation + Memorial Day correctly.

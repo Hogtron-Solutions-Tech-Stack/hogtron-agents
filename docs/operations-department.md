@@ -76,7 +76,12 @@ The Operations dept is meant to be self-contained — FactoryHQ depends on `hogt
 
 ## Migration to existing callers
 
-**Pending.** FactoryHQ's `designer.py::upload()` (Phase 3 of the queue runner) is unchanged. Migration plan: replace the inline Printify calls in `_upload_inner()` with `Operations().do(OperationsBrief(kind='printify_upload', ...))`, keep the DB row updates in designer.py. Same shape as the [[creative-department|Creative]] migration.
+**Shipped** (commit `37a0961` on FactoryHQ). `agents/designer.py::upload()` (Phase 3 of the queue runner) now delegates to `Operations.do(printify_upload)` instead of inlining `tools.printify.upload_image + tools.printify.create_product`. The DB row fetch, status state machine, and Supabase storage hooks stayed in designer.py.
+
+Implementation notes:
+- designer.py now passes `blueprint_id` / `print_provider_id` / `variant_ids` *explicitly* from `config.PRINTIFY_*` defaults, rather than relying on `tools.printify.create_product`'s in-tool fallback. Easier to see what's being shipped to Printify per call.
+- `OperationsResult.success/error` replaces the bare try/except. Failed uploads still flip DB status to `'art_failed'` with the error stored in `reject_reason`.
+- `regenerate()` still uses `tools.printify` directly because it's an *in-place image swap* on an existing product, not a fresh upload. Will migrate when Operations grows a `printify_swap_image` kind.
 
 ## Adding a new kind
 
