@@ -1,6 +1,7 @@
 from .briefs import ResearchBrief, ResearchFinding, ResearchKind
 from .research import Research
 from ._ip_clear import TMProvider
+from ._autonomous import AutonomousResult
 
 __all__ = [
     "Research",
@@ -8,4 +9,5 @@ __all__ = [
     "ResearchFinding",
     "ResearchKind",
     "TMProvider",
+    "AutonomousResult",
 ]

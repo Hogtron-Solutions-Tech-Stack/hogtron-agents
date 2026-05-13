@@ -15,6 +15,7 @@ from .._shared.telemetry import TelemetrySink, NullSink, working
 from . import (
     _ip_clear, _geo_audit, _platform_presence, _seo_audit,
     _cluster_concepts, _trend_signals, _find_leads,
+    _autonomous,
 )
 from ._ip_clear import TMProvider
 
@@ -50,6 +51,36 @@ class Research:
 
     def register(self, kind: ResearchKind, handler: Handler) -> None:
         self._handlers[kind] = handler
+
+    # --- Layer 2: autonomous reasoning loop -------------------------------
+
+    def run_autonomous(
+        self,
+        directive: str,
+        *,
+        anthropic_api_key: str,
+        model: str = "claude-opus-4-7",
+        max_iterations: int = 10,
+    ):
+        """Chain Layer 1 kinds in response to a natural-language directive.
+
+        Example:
+            r = Research(tm_provider=...)
+            result = r.run_autonomous(
+                "Find 5 IP-clear shirt phrases for Father's Day this week",
+                anthropic_api_key=...,
+            )
+            print(result.summary)
+            print(f"cost ${result.cost_usd:.4f}, {result.iterations} iter")
+
+        Returns AutonomousResult — see _autonomous.py for the full shape.
+        """
+        return _autonomous.run_autonomous(
+            self, directive,
+            anthropic_api_key=anthropic_api_key,
+            model=model,
+            max_iterations=max_iterations,
+        )
 
 
 # --- Handlers -----------------------------------------------------------
