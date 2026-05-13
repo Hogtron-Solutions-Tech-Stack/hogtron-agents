@@ -78,6 +78,8 @@ See [[research-department#ip_clear]] for the phrase-side guard; together they fo
 
 The auto-chain on brief approval (`app.py`) went from 3 calls (`art_direct + generate + upload`) to 2 (`design + upload`). Status flow `pending_art → art_ready → mockup_ready` became `pending_design → art_ready → mockup_ready` since the two phases run as one transaction.
 
+**Status: committed** as `405d2d8` on the FactoryHQ repo (2026-05-12).
+
 ## Live test results (2026-05-12)
 
 ```

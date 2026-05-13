@@ -11,7 +11,7 @@ aliases: [status, what-next]
 - ✅ Package scaffolding (`hogtron_agents/`), pip-installable editable
 - ✅ `shirt` kind fully ported from FactoryHQ/agents/designer.py
 - ✅ Live-tested: World's Okayest Grill Dad, 25s end-to-end, IP guardrail clean
-- ✅ FactoryHQ migrated to use Creative (designer.py 714 → 416 lines)
+- ✅ FactoryHQ migrated to use Creative (designer.py 714 → 416 lines) — **committed (`405d2d8` on FactoryHQ)**
 - ⏳ `pdf_page`, `mockup`, `proposal_cover`, `canva_asset` stubbed
 
 **Research department**
@@ -23,20 +23,25 @@ aliases: [status, what-next]
 - ✅ `cluster_concepts` ported (smoke-tested only — Claude cost)
 - ✅ `trend_signals` ported (smoke-tested only — scraping risk)
 - ✅ `find_leads` ported (Google Places + OSM fallback, smoke-tested only — GCP paused)
-- ⏳ FactoryHQ/agents/researcher.py not yet migrated (Sean has uncommitted edits there)
-- ⏳ hogtron-dashboard/tools/* not yet migrated (left as-is for parity comparison)
+
+**Caller migrations to Research (proof points)**
+- ✅ `hogtron-dashboard/tools/geo_audit.py` — delegates to Research (commit `d8bca1b`). Plugin shape preserved; route handler unchanged.
+- ✅ `hogtron-dashboard/tools/aggregator_audit/checkers/platform_checks.py::check_all_platforms` — delegates to Research (commit `d8bca1b`). Single-platform helpers + LISTING_PATTERNS preserved for direct callers.
+- ⏸️ `hogtron-dashboard/tools/seo_audit.py` — **deferred**. Has opt-in Apify branch Research v1 doesn't support; migrating would silently drop a feature. See decision below.
+- ⏸️ `hogtron-dashboard/tools/lead_scraper.py` — **deferred**. Has Foursquare + Apify + email enrichment beyond Research's `find_leads` v1 scope.
+- ⏸️ `FactoryHQ/agents/researcher.py` — **deferred**. Sean has uncommitted WIP edits; migration waits until those are committed.
 
 **Infrastructure**
-- ✅ Repo created: `C:\Users\sbilg\Code\hogtron-agents\` (4 commits)
+- ✅ Repo created: `C:\Users\sbilg\Code\hogtron-agents\` (6 commits)
 - ✅ Constraint locked: [[infra|Supabase for DB, Railway+subdomains for hosting]]
 - ✅ Constraint locked: client mockup URLs are frozen
-- ✅ Docs written (this folder) as Obsidian-friendly vault
+- ✅ Docs written (this folder) as Obsidian-friendly vault, mirrored into `Hogtron Solutions LLC/Agentic System/`
 
 ## Next up
 
 ### Immediate (sessions 1-2)
-- [ ] Commit FactoryHQ's `designer.py` migration (currently uncommitted — Sean's call)
-- [ ] Migrate `FactoryHQ/agents/researcher.py` to call into Research (after Sean's WIP edits are sorted)
+- [ ] **Resolve `FactoryHQ/agents/researcher.py` WIP** — Sean commits his local edits, then migrate `vet_pending()` / `discover()` / `synthesize()` to call Research (`ip_clear`, `trend_signals`, `cluster_concepts`).
+- [ ] **Apify decision** — either (a) bring Apify into Research's `seo_audit` + `find_leads`, or (b) accept the dashboard keeps its richer tools long-term. Drives whether seo_audit + lead_scraper get migrated.
 - [ ] Live-test `cluster_concepts` once a real signal corpus is freshly scraped
 - [ ] Live-test `find_leads` once GCP billing is unpaused OR via OSM-only path
 

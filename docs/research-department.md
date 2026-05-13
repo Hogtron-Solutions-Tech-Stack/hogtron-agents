@@ -167,6 +167,12 @@ The reference implementation against FactoryHQ's SQLite tm_marks is in this sess
 
 ## Migration impact on existing code
 
-**FactoryHQ/agents/researcher.py** — not yet migrated. Sean has uncommitted local edits there, so we held off touching the caller. Migration plan: same shape as `designer.py` did — keep the DB queue runner + status state machine, replace the Claude/scraping work with `Research.do()` calls.
+**hogtron-dashboard/tools/geo_audit.py** — ✅ **migrated** (commit `d8bca1b`). Plugin `run(params)` now builds a `ResearchBrief(kind='geo_audit', ...)` and unwraps `finding.payload`. JSON return shape identical (verified: discinsanity.com → score 5 / grade F before and after).
 
-**hogtron-dashboard/tools/{seo_audit,geo_audit,aggregator_audit,lead_scraper}.py** — unchanged. The dashboard keeps its existing tools; new code can choose to call Research instead. Eventually the dashboard tools become thin wrappers (or get deleted) once parity is proven.
+**hogtron-dashboard/tools/aggregator_audit/checkers/platform_checks.py::check_all_platforms** — ✅ **migrated** (commit `d8bca1b`). The multi-platform entrypoint delegates to `Research(kind='platform_presence')`. The single-platform `check_platform()`, `PLATFORM_DOMAINS`, and `LISTING_PATTERNS` were preserved for any direct callers. Route handler at `routes/aggregator_audit.py:174` unchanged.
+
+**hogtron-dashboard/tools/seo_audit.py** — ⏸️ **deferred**. Has an opt-in `use_apify` checkbox in the dashboard form for JS-rendered sites. Research's `seo_audit` intentionally scoped out Apify (Operations concern). Migrating would silently drop that feature. Decision point captured in [[roadmap#next-up]].
+
+**hogtron-dashboard/tools/lead_scraper.py** — ⏸️ **deferred**. Has Foursquare + Apify + email enrichment beyond Research's `find_leads` v1 scope.
+
+**FactoryHQ/agents/researcher.py** — ⏸️ **deferred**. Sean has uncommitted local edits there; migration waits until those are committed. Plan: same shape as `designer.py` did — keep the DB queue runner + status state machine, replace the Claude/scraping work with `Research.do()` calls (`ip_clear` in `vet_pending`, `trend_signals` in `discover`, `cluster_concepts` in `synthesize`).
