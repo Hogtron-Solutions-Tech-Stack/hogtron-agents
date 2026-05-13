@@ -7,7 +7,28 @@ aliases: [status, what-next]
 
 ## What shipped (2026-05-12)
 
-**All 5 departments scaffolded at Layer 1. 30 kinds total, 12 piloted with real handlers, 18 stubbed with port-target pointers.**
+**Layer 1 finalized.** All 5 departments scaffolded with 30 kinds total. **15 piloted with real handlers** (50%), 15 stubbed for future builds (net-new kinds + bigger ports tackled per Layer 2 need). The keystone POD shirt lifecycle is now end-to-end functional through departments:
+
+```
+Research(trend_signals)        # SerpAPI Etsy queries
+  -> Research(cluster_concepts) # Claude concepts + phrases
+  -> Research(ip_clear)         # blocklist + 771K USPTO marks
+  -> Creative(shirt)            # Claude art-direct + Recraft render
+  -> Operations(printify_upload)# create draft product
+  -> Marketing(etsy_listing)    # Claude title/desc/tags
+  -> Operations(publish_etsy)   # push draft to Etsy
+  -> Operations(render_video)   # ffmpeg Ken Burns MP4
+  -> Marketing(social_post)     # Claude Pinterest copy
+  -> Operations(publish_pinterest) # create pin
+```
+
+Agency lifecycle is partial:
+```
+Research(find_leads) -> Research(seo_audit) -> Research(geo_audit)
+  -> Research(platform_presence) -> Sales(aggregator_audit_report)
+  -> ⏳ Sales(proposal) -> ⏳ Operations(deploy_proposal)
+```
+
 
 
 
@@ -37,8 +58,9 @@ aliases: [status, what-next]
 
 **Marketing department**
 - ✅ Dispatcher + 6 kinds wired (commit `09de5c9`)
-- ✅ `etsy_listing` ported from FactoryHQ/agents/marketer.py (Pydantic _Listing schema, Etsy SYSTEM_PROMPT, tag/title guardrails). Smoke-tested.
-- ⏳ `social_post`, `blog_post`, `review_response` stubbed with port-target pointers
+- ✅ `etsy_listing` ported from FactoryHQ/agents/marketer.py (commit `09de5c9`). Pydantic `_Listing` schema, Etsy SYSTEM_PROMPT, tag/title guardrails.
+- ✅ `social_post` ported from FactoryHQ/agents/pinterester.py LLM half (commit `8a749ef`). `_PinCopy` schema with title/description/alt_text caps. Companion to `publish_pinterest` in Operations.
+- ⏳ `blog_post`, `review_response` stubbed with port-target pointers
 - ⏳ `ad_copy`, `email_outreach` stubbed as net-new
 
 **Sales department**
@@ -49,8 +71,11 @@ aliases: [status, what-next]
 
 **Operations department**
 - ✅ Dispatcher + 7 kinds wired (commit `e0ea4c4`)
-- ✅ `printify_upload` ported from FactoryHQ/agents/designer.py upload(). Inlines Printify HTTP calls so the department is self-contained. Live test deferred (would create real Printify draft).
-- ⏳ `publish_etsy`, `publish_pinterest`, `render_video`, `deploy_mockup`, `deploy_proposal` stubbed with port-target pointers
+- ✅ `printify_upload` ported from FactoryHQ/agents/designer.py upload() (commit `e0ea4c4`). Inlines Printify HTTP calls so the department is self-contained.
+- ✅ `publish_etsy` ported from FactoryHQ/agents/marketer.py publish() (commit `8a749ef`). Single POST to Printify's publish_product endpoint. cost_estimate_usd=$0.20 per call.
+- ✅ `publish_pinterest` ported from FactoryHQ/agents/pinterester.py API half (commit `8a749ef`). POST /v5/pins to Pinterest API.
+- ✅ `render_video` ported from FactoryHQ/tools/video.py + distributor.py (commit `8a749ef`). ffmpeg + PIL composition into 1080x1920 vertical MP4. Self-contained, local-only, free.
+- ⏳ `deploy_mockup`, `deploy_proposal` stubbed with port-target pointers
 - ⏳ `publish_shopify` stubbed as net-new (Shopify account fresh as of 2026-05-12)
 - 💡 Every Operations kind carries `cost_estimate_usd` for Layer 3 budget caps
 
@@ -59,6 +84,13 @@ aliases: [status, what-next]
 - ✅ Constraint locked: [[infra|Supabase for DB, Railway+subdomains for hosting]]
 - ✅ Constraint locked: client mockup URLs are frozen
 - ✅ Docs written + mirrored into `Hogtron Solutions LLC/Agentic System/` (Obsidian RAG vault)
+
+## Status: Layer 1 finalized, ready for Layer 2
+
+The 5-department dispatcher pattern is stable. 15 piloted kinds prove the architecture across LLM-driven work (Creative/Marketing/Research), pure logic (Sales aggregator_audit_report), external API calls (Operations publish_*), and local compute (Operations render_video). The 15 remaining stubs split into:
+
+- **Net-new kinds (8):** `ad_copy`, `email_outreach`, `review_response`, `blog_post`, `follow_up`, `pricing_quote`, `contract`, `publish_shopify`. No existing source to port; build when Layer 2 needs them.
+- **Ports deferred for use-case-driven need (7):** `pdf_page`, `mockup`, `proposal_cover`, `canva_asset`, `proposal`, `deploy_mockup`, `deploy_proposal`. Have port sources but tackling each when a Layer 2 directive surfaces the need.
 
 ## Next up
 
