@@ -194,3 +194,36 @@ The `_Phrase` / `_Concept` / `_SynthesisOutput` Pydantic schemas, the synthesis 
 **New adapter:** `FactoryHQ/tools/tm_provider.py` contains `FactorySQLiteTMProvider`, satisfying the `TMProvider` Protocol against FactoryHQ's SQLite `tm_marks` table. The one file that needs to change when tm_marks moves to Supabase per [[infra]].
 
 **Sean's WIP first:** before migrating, the `research_blanks()` + `research_pod_lineup()` functions (Adam picking shirt blanks for HogTron merch + recommending color/blueprint expansion for CottonForgeBoutique) were committed as `e6d0832` to keep authorship clean.
+
+## Layer 2 — `Research.run_autonomous(directive)`
+
+Research is the first department to ship Layer 2 (autonomous reasoning over its 7 Layer 1 kinds). Commit `cb8654d`.
+
+```python
+r = Research(tm_provider=FactorySQLiteTMProvider())
+result = r.run_autonomous(
+    "List 3 IP-clear shirt phrases for graduation gifts.",
+    anthropic_api_key="...",
+    max_iterations=8,  # default 10
+)
+# result.summary      -> natural-language wrap-up from the model
+# result.tool_calls   -> [{tool, input, elapsed_sec, result_summary, error}, ...]
+# result.findings     -> [ResearchFinding, ...] (full Layer 1 results, untrimmed)
+# result.cost_usd     -> ~$0.55 for the pilot directive above
+# result.iterations   -> how many model turns happened
+```
+
+Architecture:
+- `_autonomous.py::SYSTEM_PROMPT` defines the dept role + 7-tool catalog + operating principles (be efficient, IP guardrail is non-negotiable, no clarifying questions — just decide).
+- `build_tools(research_instance)` wraps each Layer 1 kind as an `AgentTool` with a hand-tuned JSON schema and a closure-based handler that calls `research_instance.do(brief)` internally. The closure also appends every `ResearchFinding` to a shared list so the caller gets them all.
+- `run_agent_loop()` from [[patterns|`_shared/agent_loop.py`]] handles the `tool_use` → `tool_result` cycle.
+- `_summarize_finding()` trims each Layer 1 result before going back to the agent — full payload stays in `result.findings` for the caller, but the agent only sees the essentials (titles+URLs, not full JSON; score+verdict, not all 5 pillars). Keeps context tight across many tool calls.
+
+First live result (2026-05-12):
+- Directive: `"List 3 IP-clear shirt phrases for graduation gifts."`
+- 5 iterations, 7 tool calls (1 trend_signals + 1 cluster_concepts + 5 ip_clear)
+- Caught a real TM hit (`"Class of 2025: Now With Extra Letters After My Name"` → live mark `CLASS OF 2020`), recovered with a Masters Degree alternative
+- Surfaced meta-insight: `"Class of [year]"` phrasings carry TM risk; recommended Creative avoid going forward. The deterministic vet_pending would not have noticed that pattern.
+- 60 sec, **$0.55**
+
+See [[architecture#layer-2-—-department-agent-loops-claude-tool-use]] for the cross-department picture.
