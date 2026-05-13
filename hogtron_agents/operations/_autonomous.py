@@ -206,12 +206,27 @@ def build_tools(operations_instance) -> tuple[list[OperationsResult], list[Agent
 
 
 def run_autonomous(operations_instance, directive, *, anthropic_api_key,
-                   model="claude-opus-4-7", max_iterations=10) -> AutonomousResult:
+                   model="claude-opus-4-7", max_iterations=10,
+                   progress_callback=None, should_cancel=None,
+                   autonomy_rung: int = 0) -> AutonomousResult:
     results, tools = build_tools(operations_instance)
+    # Make the current autonomy rung visible to the model. The SYSTEM_PROMPT
+    # already references rung 0 = HOLD publish_*. Prepending the explicit
+    # rung gives the model a clear gate to reason about instead of relying
+    # on directive phrasing alone.
+    rung_prefix = (
+        f"[AUTONOMY RUNG = {autonomy_rung}]\n"
+        "Rung 0: HOLD all publish_* tools — produce drafts only.\n"
+        "Rung 1: AUTO-APPROVE concepts (publish_pinterest allowed).\n"
+        "Rung 2: AUTO-PUBLISH mockups (publish_etsy allowed for high-confidence).\n"
+        "Rung 3+: Higher autonomy — proceed as directive indicates.\n\n"
+    )
+    user_message = rung_prefix + directive
     agent_result = run_agent_loop(
-        system=SYSTEM_PROMPT, user_message=directive, tools=tools,
+        system=SYSTEM_PROMPT, user_message=user_message, tools=tools,
         api_key=anthropic_api_key, model=model, max_iterations=max_iterations,
         telemetry=operations_instance.telemetry, role="operations.autonomous",
+        progress_callback=progress_callback, should_cancel=should_cancel,
     )
     ops_cost = sum(r.cost_estimate_usd or 0 for r in results)
     return AutonomousResult(

@@ -38,11 +38,18 @@ class Sales:
         self._handlers[kind] = handler
 
     def run_autonomous(self, directive: str, *, anthropic_api_key: str,
-                       model: str = "claude-opus-4-7", max_iterations: int = 8):
-        """Layer 2 — chain Sales kinds in response to a directive."""
+                       model: str = "claude-sonnet-4-6", max_iterations: int = 8,
+                       progress_callback=None, should_cancel=None):
+        """Layer 2 — chain Sales kinds in response to a directive.
+
+        Default Sonnet 4.6 — aggregator audit reports and proposal builds
+        are pattern-heavy templating; Opus is overkill. Override for
+        custom long-form pitches or novel pricing negotiations.
+        """
         return _autonomous.run_autonomous(
             self, directive, anthropic_api_key=anthropic_api_key,
             model=model, max_iterations=max_iterations,
+            progress_callback=progress_callback, should_cancel=should_cancel,
         )
 
 

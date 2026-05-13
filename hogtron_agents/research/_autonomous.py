@@ -323,6 +323,8 @@ def run_autonomous(
     anthropic_api_key: str,
     model: str = "claude-opus-4-7",
     max_iterations: int = 10,
+    progress_callback=None,
+    should_cancel=None,
 ) -> AutonomousResult:
     """Run the Research department's agent loop on a natural-language directive.
 
@@ -340,6 +342,8 @@ def run_autonomous(
         max_iterations=max_iterations,
         telemetry=research_instance.telemetry,
         role="research.autonomous",
+        progress_callback=progress_callback,
+        should_cancel=should_cancel,
     )
 
     return AutonomousResult(

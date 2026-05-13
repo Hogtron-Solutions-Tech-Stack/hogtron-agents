@@ -121,12 +121,14 @@ def build_tools(creative_instance) -> tuple[list[CreativeAsset], list[AgentTool]
 
 
 def run_autonomous(creative_instance, directive, *, anthropic_api_key,
-                   model="claude-opus-4-7", max_iterations=8) -> AutonomousResult:
+                   model="claude-opus-4-7", max_iterations=8,
+                   progress_callback=None, should_cancel=None) -> AutonomousResult:
     assets, tools = build_tools(creative_instance)
     result = run_agent_loop(
         system=SYSTEM_PROMPT, user_message=directive, tools=tools,
         api_key=anthropic_api_key, model=model, max_iterations=max_iterations,
         telemetry=creative_instance.telemetry, role="creative.autonomous",
+        progress_callback=progress_callback, should_cancel=should_cancel,
     )
     return AutonomousResult(
         directive=directive, summary=result.final_message,

@@ -44,11 +44,18 @@ class Creative:
         self._handlers[kind] = handler
 
     def run_autonomous(self, directive: str, *, anthropic_api_key: str,
-                       model: str = "claude-opus-4-7", max_iterations: int = 8):
-        """Layer 2 — chain Creative kinds in response to a directive."""
+                       model: str = "claude-sonnet-4-6", max_iterations: int = 8,
+                       progress_callback=None, should_cancel=None):
+        """Layer 2 — chain Creative kinds in response to a directive.
+
+        Default model is Sonnet 4.6 — Opus is rarely needed for the
+        single-tool-call patterns Creative typically runs. Override per-call
+        when generating complex multi-step deliverables.
+        """
         return _autonomous.run_autonomous(
             self, directive, anthropic_api_key=anthropic_api_key,
             model=model, max_iterations=max_iterations,
+            progress_callback=progress_callback, should_cancel=should_cancel,
         )
 
 

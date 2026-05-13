@@ -83,6 +83,8 @@ def run_agent_loop(
     thinking: bool = True,
     telemetry: Optional[TelemetrySink] = None,
     role: str = "agent",
+    progress_callback: Optional[Callable[[dict], None]] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> AgentResult:
     """Run a Claude agent loop until end_turn or max_iterations.
 
@@ -90,6 +92,16 @@ def run_agent_loop(
       1. Send user_message + tools to Claude
       2. If response has no tool_use blocks, return (end_turn)
       3. Else execute each tool, append tool_result blocks, loop
+
+    Optional hooks (additive, backward-compatible):
+      progress_callback({iteration, max_iterations, tool_calls_count,
+                         last_tool, elapsed_sec})
+        Invoked at the start of each iteration. UI updates live state from
+        this. Exceptions in the callback are swallowed.
+      should_cancel() -> bool
+        Polled at the top of each iteration. When True, the loop returns
+        early with stop_reason='cancelled' instead of making another model
+        call. Useful for the Bridge's cancel button.
     """
     sink = telemetry or NullSink()
     client = anthropic.Anthropic(api_key=api_key)
@@ -105,8 +117,38 @@ def run_agent_loop(
     total_input = 0
     total_output = 0
     t_start = time.time()
+    last_tool: Optional[str] = None
 
     for iteration in range(max_iterations):
+        # Cooperative cancel check — fires before the next (expensive) model
+        # call so a user clicking Cancel doesn't burn another iteration.
+        if should_cancel and should_cancel():
+            sink.log(role, f"cancelled at iter {iteration + 1}/{max_iterations}")
+            return AgentResult(
+                success=False,
+                final_message="",
+                tool_calls=tool_calls_log,
+                iterations=iteration,
+                input_tokens=total_input,
+                output_tokens=total_output,
+                duration_sec=time.time() - t_start,
+                stop_reason="cancelled",
+                error="cancelled by caller",
+            )
+
+        # Surface progress to any listener (Bridge UI poller, etc.).
+        if progress_callback:
+            try:
+                progress_callback({
+                    "iteration":        iteration + 1,
+                    "max_iterations":   max_iterations,
+                    "tool_calls_count": len(tool_calls_log),
+                    "last_tool":        last_tool,
+                    "elapsed_sec":      time.time() - t_start,
+                })
+            except Exception:  # noqa: BLE001
+                pass
+
         sink.log(role, f"iter {iteration + 1}/{max_iterations}: model call")
         try:
             kwargs = {
@@ -175,6 +217,7 @@ def run_agent_loop(
                 tool=block.name, input=dict(block.input),
                 result=result, elapsed_sec=elapsed, error=error,
             ))
+            last_tool = block.name
             sink.log(role, f"  tool {block.name} -> "
                      f"{'error' if error else 'ok'} in {elapsed:.1f}s")
             tool_results.append({

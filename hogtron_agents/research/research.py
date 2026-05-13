@@ -59,10 +59,18 @@ class Research:
         directive: str,
         *,
         anthropic_api_key: str,
-        model: str = "claude-opus-4-7",
+        model: str = "claude-sonnet-4-6",
         max_iterations: int = 10,
+        progress_callback=None,
+        should_cancel=None,
     ):
         """Chain Layer 1 kinds in response to a natural-language directive.
+
+        Default is Sonnet 4.6 — saves ~5x vs Opus on routine audits / signal
+        scans. The audit handlers themselves call Gemini Flash (free) or
+        Haiku 4.5 internally, so the only Claude cost here is the reasoning
+        loop. Override with model='claude-opus-4-7' for novel multi-step
+        synthesis (cluster_concepts on a new market, etc.).
 
         Example:
             r = Research(tm_provider=...)
@@ -80,6 +88,8 @@ class Research:
             anthropic_api_key=anthropic_api_key,
             model=model,
             max_iterations=max_iterations,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
         )
 
 

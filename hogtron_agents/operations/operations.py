@@ -41,8 +41,14 @@ class Operations:
         self._handlers[kind] = handler
 
     def run_autonomous(self, directive: str, *, anthropic_api_key: str,
-                       model: str = "claude-opus-4-7", max_iterations: int = 10):
+                       model: str = "claude-sonnet-4-6", max_iterations: int = 10,
+                       progress_callback=None, should_cancel=None,
+                       autonomy_rung: int = 0):
         """Layer 2 — chain Operations kinds in response to a directive.
+
+        Default Sonnet 4.6 — Operations runs at autonomy rung 0 by default,
+        so the model just needs to faithfully follow the SYSTEM_PROMPT's
+        HOLD rules. Sonnet handles that reliably and saves vs Opus.
 
         WARNING: every Operations kind has real-world side effects. The
         system prompt biases toward the autonomy ladder (rung 0: hold
@@ -51,6 +57,8 @@ class Operations:
         return _autonomous.run_autonomous(
             self, directive, anthropic_api_key=anthropic_api_key,
             model=model, max_iterations=max_iterations,
+            progress_callback=progress_callback, should_cancel=should_cancel,
+            autonomy_rung=autonomy_rung,
         )
 
 

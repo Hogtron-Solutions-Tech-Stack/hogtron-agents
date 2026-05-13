@@ -43,6 +43,8 @@ class CEO:
         model: str = "claude-opus-4-7",
         max_iterations: int = 8,
         dept_max_iterations: int = 10,
+        progress_callback=None,
+        should_cancel=None,
     ):
         """Dispatch a company-level directive across departments.
 
@@ -71,4 +73,6 @@ class CEO:
             model=model,
             max_iterations=max_iterations,
             dept_max_iterations=dept_max_iterations,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
         )

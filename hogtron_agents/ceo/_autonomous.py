@@ -76,6 +76,11 @@ class DeptCallSummary:
     cost_usd: float
     ops_cost_usd: float = 0.0
     tool_calls_count: int = 0
+    # The Anthropic model the nested dept actually ran on. Captured at
+    # dispatch time from the dept's run_autonomous default so telemetry
+    # downstream (Bridge OVERSEER panel, dept_runs.model) can render the
+    # right tier badge per dept-call.
+    model: Optional[str] = None
 
 
 @dataclass
@@ -99,18 +104,36 @@ def build_tools(
     research, creative, marketing, sales, operations,
     anthropic_api_key: str,
     dept_max_iterations: int = 10,
+    should_cancel=None,
 ) -> tuple[list[DeptCallSummary], list[AgentTool]]:
-    """Wrap each dept's run_autonomous as a CEO-level tool."""
+    """Wrap each dept's run_autonomous as a CEO-level tool.
+
+    `should_cancel` is forwarded to each nested dept run so the Bridge's
+    Cancel button reaches all the way down into in-flight dept loops.
+    """
     dept_calls: list[DeptCallSummary] = []
 
     def _wrap(dept_name: str, dept_instance, attr_name: str):
+        import inspect
         method = getattr(dept_instance, "run_autonomous")
+        # Capture whatever the dept declares as its default model so the
+        # CEO's DeptCallSummary can record exactly what each nested call
+        # ran on (Sonnet for all 5 depts today; tracked via the dept's
+        # own signature so updates stay in sync without coupling here).
+        _sig = inspect.signature(method)
+        _model_param = _sig.parameters.get("model")
+        _default_model = _model_param.default if _model_param else None
+
         def handler(directive: str) -> dict:
-            result = method(
-                directive,
-                anthropic_api_key=anthropic_api_key,
-                max_iterations=dept_max_iterations,
-            )
+            kwargs = {
+                "anthropic_api_key": anthropic_api_key,
+                "max_iterations":    dept_max_iterations,
+            }
+            # Only forward should_cancel if the dept accepts it. Older
+            # depts in mixed-version dev envs won't have the param yet.
+            if "should_cancel" in _sig.parameters and should_cancel is not None:
+                kwargs["should_cancel"] = should_cancel
+            result = method(directive, **kwargs)
             # Standardize across dept-specific AutonomousResult shapes
             ops_cost = getattr(result, "ops_cost_usd", 0.0)
             summary = DeptCallSummary(
@@ -118,6 +141,7 @@ def build_tools(
                 success=result.success, summary=result.summary,
                 iterations=result.iterations, cost_usd=result.cost_usd,
                 ops_cost_usd=ops_cost, tool_calls_count=len(result.tool_calls),
+                model=_default_model,
             )
             dept_calls.append(summary)
             return {
@@ -186,6 +210,8 @@ def run_autonomous(
     model: str = "claude-opus-4-7",
     max_iterations: int = 8,
     dept_max_iterations: int = 10,
+    progress_callback=None,
+    should_cancel=None,
 ) -> CEOResult:
     dept_calls, tools = build_tools(
         research=ceo_instance.research,
@@ -195,6 +221,7 @@ def run_autonomous(
         operations=ceo_instance.operations,
         anthropic_api_key=anthropic_api_key,
         dept_max_iterations=dept_max_iterations,
+        should_cancel=should_cancel,
     )
 
     result = run_agent_loop(
@@ -206,6 +233,8 @@ def run_autonomous(
         max_iterations=max_iterations,
         telemetry=ceo_instance.telemetry,
         role="ceo",
+        progress_callback=progress_callback,
+        should_cancel=should_cancel,
     )
 
     # Total cost = CEO tokens + all nested dept Claude tokens
