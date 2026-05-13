@@ -1,16 +1,19 @@
-"""Trend-signals handler — scrapes public sources for market signals.
+"""Trend-signals handler — pulls market signals from public sources.
 
-V1 supports Etsy search (the primary signal for POD). Pinterest / Reddit /
-TikTok are deferred until the SerpAPI-driven approach is ported (cleaner
-ToS posture than direct scraping anyway).
+Two Etsy backends:
+  - 'serpapi' (default when SERPAPI_API_KEY is set): site-restricted
+    Google queries ('<phrase> site:etsy.com') via SerpAPI. ToS-clean,
+    not subject to Etsy's anti-bot defenses, fast. Loses sales_badge
+    data (SerpAPI doesn't surface it) — caller gets titles + URLs only.
+  - 'direct' (fallback): direct scrape of etsy.com/search with BS4.
+    Surfaces sales_badge (the gold signal for trend ranking) but Etsy
+    soft-blocks scrapers quickly. Use sparingly + with delays.
 
-Ported from FactoryHQ/tools/etsy_search.py + agents/researcher.py discover().
-Stateless: caller supplies queries, gets back raw signal records. Caller
-owns persistence.
+Pinterest / Reddit / TikTok are deferred until similar SerpAPI-driven
+approaches are ported.
 
-POLITENESS: Etsy is being scraped, not API-queried. Rate-limit between
-requests via the configured delay. Aggressive use will trigger CAPTCHAs
-and soft-block the source IP. Be a good citizen.
+Stateless: caller supplies queries, gets back raw signal records.
+Caller owns persistence.
 """
 from __future__ import annotations
 
@@ -88,16 +91,63 @@ def _search_etsy(query: str, limit: int, ua: str, delay: float) -> list[dict]:
     return results
 
 
+SERPAPI_URL = "https://serpapi.com/search.json"
+
+
+def _search_etsy_via_serpapi(query: str, limit: int, api_key: str) -> list[dict]:
+    """ToS-clean path: site-restricted Google query for Etsy listings."""
+    resp = requests.get(
+        SERPAPI_URL,
+        params={
+            "q": f"{query} site:etsy.com",
+            "engine": "google",
+            "api_key": api_key,
+            "num": limit,
+            "hl": "en",
+            "gl": "us",
+        },
+        timeout=15,
+    )
+    if resp.status_code == 401:
+        raise RuntimeError("SerpAPI rejected the API key")
+    if resp.status_code == 429:
+        raise RuntimeError("SerpAPI quota / rate limit hit")
+    resp.raise_for_status()
+
+    organic = (resp.json() or {}).get("organic_results") or []
+    results = []
+    for r in organic:
+        link = (r.get("link") or "").strip()
+        listing_id = _extract_listing_id(link)
+        if not listing_id:
+            continue  # skip category pages, shop pages, etc — only individual listings
+        results.append({
+            "source": "etsy",
+            "source_query": query,
+            "listing_id": listing_id,
+            "title": (r.get("title") or "").strip(),
+            "url": link.split("?")[0],
+            "price": None,           # not exposed by SerpAPI
+            "shop": None,            # not exposed by SerpAPI
+            "sales_badge": None,     # not exposed by SerpAPI
+            "snippet": (r.get("snippet") or "").strip(),
+        })
+    return results
+
+
 def trend_signals(brief: ResearchBrief) -> ResearchFinding:
-    """Scrape market signals from public sources.
+    """Pull market signals from public sources.
 
     brief.payload:
-      queries (list[str], required) — search terms to scrape
+      queries (list[str], required) — search terms
       source  (str, default 'etsy') — only 'etsy' supported in v1
       limit_per_query (int, default 20)
     brief.context:
-      user_agent (optional, falls back to default Chrome UA)
-      delay_sec (optional, falls back to env ETSY_REQUEST_DELAY_SEC or 2.5)
+      backend (str, optional) — 'serpapi' | 'direct' | 'auto' (default).
+        'auto' uses SerpAPI when SERPAPI_API_KEY is set, else 'direct'.
+      serpapi_api_key (optional, falls back to env SERPAPI_API_KEY)
+      user_agent (optional, used by 'direct' backend)
+      delay_sec (optional, used by 'direct' backend)
     """
     queries = brief.payload.get("queries")
     if not queries:
@@ -111,6 +161,27 @@ def trend_signals(brief: ResearchBrief) -> ResearchFinding:
         )
 
     limit = int(brief.payload.get("limit_per_query") or 20)
+
+    # Backend selection
+    backend = (brief.context.get("backend") or "auto").lower()
+    serpapi_key = (
+        brief.context.get("serpapi_api_key")
+        or os.environ.get("SERPAPI_API_KEY")
+    )
+    if backend == "auto":
+        backend = "serpapi" if serpapi_key else "direct"
+    if backend == "serpapi" and not serpapi_key:
+        return ResearchFinding(
+            kind="trend_signals", status="error",
+            reason="backend='serpapi' but SERPAPI_API_KEY not set",
+        )
+    if backend not in ("serpapi", "direct"):
+        return ResearchFinding(
+            kind="trend_signals", status="error",
+            reason=f"unknown backend {backend!r}; must be 'serpapi' | 'direct' | 'auto'",
+        )
+
+    # Per-backend args
     ua = brief.context.get("user_agent") or DEFAULT_USER_AGENT
     delay = float(
         brief.context.get("delay_sec")
@@ -118,13 +189,16 @@ def trend_signals(brief: ResearchBrief) -> ResearchFinding:
         or DEFAULT_DELAY_SEC
     )
 
-    all_signals = []
+    all_signals: list[dict] = []
     per_query_counts: dict[str, int] = {}
     errors: list[dict] = []
 
     for q in queries:
         try:
-            signals = _search_etsy(q, limit, ua, delay)
+            if backend == "serpapi":
+                signals = _search_etsy_via_serpapi(q, limit, serpapi_key)
+            else:
+                signals = _search_etsy(q, limit, ua, delay)
             all_signals.extend(signals)
             per_query_counts[q] = len(signals)
         except requests.HTTPError as e:
@@ -134,14 +208,15 @@ def trend_signals(brief: ResearchBrief) -> ResearchFinding:
 
     return ResearchFinding(
         kind="trend_signals",
-        status="ok" if all_signals else "error" if errors else "ok",
+        status="ok" if all_signals else ("error" if errors else "ok"),
         payload={"signals": all_signals, "errors": errors},
         metadata={
             "source": source,
+            "backend": backend,
             "n_signals": len(all_signals),
             "per_query_counts": per_query_counts,
             "n_errors": len(errors),
         },
-        reason=f"scraped {len(all_signals)} signals across {len(queries)} queries"
+        reason=f"got {len(all_signals)} signals via {backend} across {len(queries)} queries"
                + (f"; {len(errors)} errors" if errors else ""),
     )
