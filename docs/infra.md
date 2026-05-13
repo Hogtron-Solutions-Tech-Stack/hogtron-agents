@@ -64,11 +64,15 @@ Those URLs are **frozen**.
 | **Supabase** | All persistent state | Active |
 | **IONOS** | DNS for hogtron-solutions.com | Active |
 
-## Cost discipline (when we get to Layer 2/3)
+## Cost discipline (Layer 2/3)
 
-A Layer 3 CEO loop firing daily across 5 departments could easily burn $5-20/day in API costs if unchecked. Required before Layer 2 ships:
-- Per-department API spend telemetry (write to a `dept_costs` Supabase table)
-- Hard daily caps per department + global cap
-- Budget alerts via Slack webhook (already configured)
+The 5am `ceo_daily` cron (`FactoryHQ/scripts/daily_ceo.py`) fires `ceo.run_autonomous()` once per day. Typical spend per run: **$1-1.50 Claude + $0 ops** (publishing is held at autonomy rung 0). Live test today (3-dept chain) was $1.08.
 
-See [[architecture#cost-discipline-when-we-get-to-layer-23]] if/when this becomes a concrete sub-page.
+### Spend telemetry tables (Supabase, shipped 2026-05-12)
+- **`ceo_runs`** — one row per CEO call. Captures total Claude cost (CEO + nested dept), ops cost (Etsy fees, etc.), duration, iterations, journal_path, source (`daily_cron` | `ad_hoc` | etc.).
+- **`dept_runs`** — one row per nested dept call within a ceo_runs row. FK on `ceo_run_id` with CASCADE delete.
+
+### Still to come
+- Hard daily caps per department + global cap (no enforcement yet — telemetry first to establish baselines)
+- Budget alerts via Slack webhook
+- A dashboard widget rendering daily spend trend

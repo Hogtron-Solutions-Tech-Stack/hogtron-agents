@@ -113,6 +113,35 @@ Live result (2026-05-12): 1 directive → 3 dept calls → journal-ready summary
 
 **The 3-layer architecture is now complete and exercised end-to-end.**
 
+## Daily wiring (shipped 2026-05-12 late)
+
+The 5am cron has been swapped from the narrower `researcher.synthesize + vet_pending` to the full CEO loop:
+
+- **`FactoryHQ/scripts/daily_ceo.py`** (commit `28b11a9`) — `run_daily_ceo()` constructs the CEO with all 5 dept instances (including `FactorySQLiteTMProvider` for Research), fires the configured directive, renders a journal entry, writes it to `hogtron-dashboard/docs/daily_log/YYYY-MM-DD-ceo.md`. CLI-callable for ad-hoc runs: `python scripts/daily_ceo.py "custom directive"`.
+- **`FactoryHQ/jobs.py`** — replaces the `researcher_daily` APScheduler job with `ceo_daily` at 05:00. Old `run_researcher_synth` kept callable for CLI but no longer cron-scheduled.
+- **Dashboard CSS** (commit `c8947c8`) — added `.user-ceo` dot color (pink `#f472b6`) so the Journal calendar renders CEO entries alongside Sean (cyan) + Anthony (gold) + combined (purple).
+
+## Cost telemetry (shipped 2026-05-12 late)
+
+Two new Supabase tables for tracking Layer 3 spend (commit `1fd9fd9`):
+
+- **`ceo_runs`** — one row per `ceo.run_autonomous()` call. Captures source, directive, success, summary, duration, iterations, input/output tokens, Claude cost USD, real-world ops cost USD, stop_reason, error, journal_path.
+- **`dept_runs`** — one row per nested dept call (FK to `ceo_runs.id`, CASCADE). Captures department, iterations, tool_calls_count, cost_usd, ops_cost_usd, summary.
+
+Wired into `daily_ceo.py`: after each run, `log_run_to_db()` inserts both rows. Telemetry failures don't fail the run — the journal entry is the authoritative artifact.
+
+Charts available:
+```sql
+-- Daily total spend
+SELECT date(started_at), SUM(cost_usd + ops_cost_usd)
+FROM ceo_runs GROUP BY 1 ORDER BY 1 DESC;
+
+-- Per-department share over 7 days
+SELECT department, SUM(cost_usd)
+FROM dept_runs WHERE created_at > now() - interval '7 days'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
 ## Status: Layer 1 + first Layer 2 pilot
 
 The 5-department dispatcher pattern is stable. 15 piloted Layer 1 kinds prove the architecture across LLM-driven work (Creative/Marketing/Research), pure logic (Sales aggregator_audit_report), external API calls (Operations publish_*), and local compute (Operations render_video). Layer 2 proven viable on Research.
