@@ -85,10 +85,30 @@ Research(find_leads) -> Research(seo_audit) -> Research(geo_audit)
 - ✅ Constraint locked: client mockup URLs are frozen
 - ✅ Docs written + mirrored into `Hogtron Solutions LLC/Agentic System/` (Obsidian RAG vault)
 
-## Status: Layer 1 finalized, ready for Layer 2
+## Layer 2 — autonomous reasoning over Layer 1
 
-The 5-department dispatcher pattern is stable. 15 piloted kinds prove the architecture across LLM-driven work (Creative/Marketing/Research), pure logic (Sales aggregator_audit_report), external API calls (Operations publish_*), and local compute (Operations render_video). The 15 remaining stubs split into:
+**Pilot shipped on Research (2026-05-12, commit `cb8654d`).**
 
+`Research.run_autonomous(directive)` takes a natural-language CEO-style directive and chains Layer 1 kinds as Claude tool calls until the directive is fulfilled.
+
+Architecture: ~80-line agent loop in [`_shared/agent_loop.py`](C:/Users/sbilg/Code/hogtron-agents/hogtron_agents/_shared/agent_loop.py), uses anthropic SDK's `tool_use` API directly (no `claude-agent-sdk` dep). Per-dept module in `<dept>/_autonomous.py` defines the SYSTEM_PROMPT + JSON schema per kind + result trimming.
+
+**First live result:**
+- Directive: `"List 3 IP-clear shirt phrases for graduation gifts."`
+- 5 iter, 7 tool calls (1 trend_signals → 1 cluster_concepts → 5 ip_clear), 60s, **$0.55**
+- Caught a real TM hit, recovered with an alternate phrase, surfaced meta-insight (`"Class of [year]"` stem is risky)
+
+**Status of the rest:**
+- ⏳ Marketing — `Marketing.run_autonomous` not yet built (same shape as Research)
+- ⏳ Sales — pending; tools = aggregator_audit_report + stubs once they ship
+- ⏳ Operations — pending; trickiest one because every kind has external-system side effects (autonomy ladder applies)
+- ⏳ Creative — pending; smaller tool surface since only `shirt` is piloted
+
+## Status: Layer 1 + first Layer 2 pilot
+
+The 5-department dispatcher pattern is stable. 15 piloted Layer 1 kinds prove the architecture across LLM-driven work (Creative/Marketing/Research), pure logic (Sales aggregator_audit_report), external API calls (Operations publish_*), and local compute (Operations render_video). Layer 2 proven viable on Research.
+
+Remaining Layer 1 stubs split into:
 - **Net-new kinds (8):** `ad_copy`, `email_outreach`, `review_response`, `blog_post`, `follow_up`, `pricing_quote`, `contract`, `publish_shopify`. No existing source to port; build when Layer 2 needs them.
 - **Ports deferred for use-case-driven need (7):** `pdf_page`, `mockup`, `proposal_cover`, `canva_asset`, `proposal`, `deploy_mockup`, `deploy_proposal`. Have port sources but tackling each when a Layer 2 directive surfaces the need.
 

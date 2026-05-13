@@ -58,20 +58,34 @@ Callable today from:
 - hogtron-dashboard route handlers
 - Anywhere Python runs and `hogtron-agents` is installed
 
-### Layer 2 — Department agent loops (Claude Agent SDK)
-**Optional reasoning layer over Layer 1.**
+### Layer 2 — Department agent loops (Claude tool-use)
+**Optional reasoning layer over Layer 1. Pilot shipped on Research (2026-05-12).**
 
 When a caller wants Claude to *decide* which Layer 1 calls to make, they hit Layer 2:
 
 ```python
-Research.run_autonomous(
-  "Find me 20 high-saturation phrases for Father's Day shirts"
+r = Research(tm_provider=...)
+result = r.run_autonomous(
+    "List 3 IP-clear shirt phrases for graduation gifts.",
+    anthropic_api_key=...,
 )
+print(result.summary)        # the model's natural-language wrap-up
+print(result.tool_calls)     # what got chained
+print(result.cost_usd)       # estimated spend on Claude tokens
 ```
 
-Internally the agent loop has Layer 1 methods exposed as tools (via the Claude Agent SDK). It reasons, picks `trend_signals` → `cluster_concepts` → `ip_clear`, handles its own retries, and returns the consolidated findings.
+Internally the loop has Layer 1 kinds exposed as Claude tools (`tool_use` API). The model reasons, picks the right kinds in the right order, observes results, adapts. Returns an `AutonomousResult` with the full tool-call log, all underlying `ResearchFindings`, cost, and iteration count.
 
-Not built yet. Will probably pilot on **Research** first — cheapest mistakes (a bad scrape costs cents; a bad design costs an Etsy strike).
+**Implementation choice — thin loop over the anthropic SDK, not the `claude-agent-sdk` package.** ~80 lines in [`_shared/agent_loop.py`](C:/Users/sbilg/Code/hogtron-agents/hogtron_agents/_shared/agent_loop.py). No new deps, transparent control flow, easy to inject telemetry + cost tracking. Swap in the SDK later if we want its features.
+
+**First live result (2026-05-12, Research pilot):**
+- Directive: `"List 3 IP-clear shirt phrases for graduation gifts."`
+- Agent chained: `trend_signals` (1 query) → `cluster_concepts` (synth 3 concepts) → `ip_clear` ×5 (vetted candidates one by one)
+- Caught a real TM hit on `"Class of 2025: Now With Extra Letters After My Name"` (live apparel-class mark `CLASS OF 2020`, serial 88878430), substituted a Masters Degree phrase, returned 3 cleared
+- **Bonus: surfaced a meta-insight** — `"Class of [year]"` phrasings are risky. A deterministic pipeline doesn't notice that pattern; the agent does. This is the Layer 2 dividend.
+- 5 iterations, 7 tool calls, 60 sec, $0.55
+
+Next: pilot Layer 2 on Marketing, Sales, Operations, Creative. Same shape — each gets a `run_autonomous(directive)` method, hand-tuned system prompt + tool JSON schemas.
 
 ### Layer 3 — CEO loop (cross-department orchestration)
 **The "fully autonomous" piece.**
