@@ -116,16 +116,22 @@ finding = r.do(ResearchBrief(
 
 ### `trend_signals`
 
-Scrapes Etsy public search results. BeautifulSoup + polite throttling (2.5s default, configurable). Each search returns `{listing_id, title, url, price, shop, sales_badge}`.
+Two Etsy backends, chosen via `brief.context['backend']`:
 
-Pinterest / Reddit / TikTok deferred — direct scraping has worse ToS posture than the SerpAPI route used for `platform_presence`. When we add those, they'll likely route through SerpAPI.
+- **`serpapi` (default when `SERPAPI_API_KEY` is set)**: site-restricted Google queries (`<phrase> site:etsy.com`). ToS-clean, ~2s/query, bypasses Etsy's anti-bot defenses. Returns `{listing_id, title, url, snippet}` — but no `sales_badge` or `price` (SerpAPI doesn't surface those).
+- **`direct` (fallback)**: BS4 scrape of `etsy.com/search`. Returns the full record including `sales_badge` (the gold trend signal), but Etsy 403s scrapers aggressively. Use with polite throttling.
+- **`auto`** (the actual default): serpapi if key set, else direct.
+
+Pinterest / Reddit / TikTok deferred — when we add those, they'll likely route through SerpAPI for the same reasons.
 
 ```python
 finding = r.do(ResearchBrief(
     kind="trend_signals",
     payload={"queries": ["funny coffee shirt", "teacher life shirt"], "limit_per_query": 20},
+    context={"backend": "auto"},  # or "serpapi" or "direct"
 ))
-# finding.payload["signals"] -> [40 listings across 2 queries]
+# finding.metadata["backend"] -> "serpapi"
+# finding.payload["signals"] -> [15 listings across 2 queries]
 ```
 
 ### `find_leads`
@@ -163,7 +169,7 @@ class MyTMProvider:
 r = Research(tm_provider=MyTMProvider())
 ```
 
-The reference implementation against FactoryHQ's SQLite tm_marks is in this session's live test in [[roadmap#what-shipped-2026-05-12]]. The Supabase version (deferred per [[infra]]) will be a similar adapter pointing at Postgres.
+The reference implementation lives in `FactoryHQ/tools/tm_provider.py::FactorySQLiteTMProvider`. Its name is a holdover — it actually queries whatever DB is configured by `DATABASE_URL`. As of 2026-05-12 that's **Supabase Postgres with 771,853 live apparel-class rows** populated via `scripts/migrate_tm_marks_to_supabase.py`. The Protocol abstraction means `FactorySQLiteTMProvider` works against either SQLite or Postgres without modification.
 
 ## Migration impact on existing code
 
