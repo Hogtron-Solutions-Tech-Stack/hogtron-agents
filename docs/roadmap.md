@@ -98,11 +98,20 @@ Architecture: ~80-line agent loop in [`_shared/agent_loop.py`](C:/Users/sbilg/Co
 - 5 iter, 7 tool calls (1 trend_signals → 1 cluster_concepts → 5 ip_clear), 60s, **$0.55**
 - Caught a real TM hit, recovered with an alternate phrase, surfaced meta-insight (`"Class of [year]"` stem is risky)
 
-**Status of the rest:**
-- ⏳ Marketing — `Marketing.run_autonomous` not yet built (same shape as Research)
-- ⏳ Sales — pending; tools = aggregator_audit_report + stubs once they ship
-- ⏳ Operations — pending; trickiest one because every kind has external-system side effects (autonomy ladder applies)
-- ⏳ Creative — pending; smaller tool surface since only `shirt` is piloted
+**Layer 2 complete across all 5 departments (commit `84f4ef9`):**
+- ✅ Research — 7 tools
+- ✅ Marketing — 2 tools (etsy_listing + social_post). Live-tested: $0.14, 2 iter, both pieces produced + flagged downstream issue.
+- ✅ Sales — 1 tool (aggregator_audit_report). Bare today; interface ready for future kinds.
+- ✅ Operations — 4 tools (printify_upload, publish_etsy, publish_pinterest, render_video). SYSTEM_PROMPT enforces autonomy-ladder rung 0 (hold publish_* without explicit auth).
+- ✅ Creative — 1 tool (shirt). Same shape for consistency.
+
+## Layer 3 — CEO loop (shipped)
+
+`CEO.run_autonomous(directive)` dispatches across all 5 departments. Each CEO tool call is itself a Layer 2 dept loop — costs compound.
+
+Live result (2026-05-12): 1 directive → 3 dept calls → journal-ready summary in 161s, $1.08. The CEO autonomously surfaced 2 real downstream issues (image resolution mismatch, blank verification) without being asked. See [[architecture#layer-3-—-ceo-loop-cross-department-orchestration]] for the architecture detail.
+
+**The 3-layer architecture is now complete and exercised end-to-end.**
 
 ## Status: Layer 1 + first Layer 2 pilot
 
