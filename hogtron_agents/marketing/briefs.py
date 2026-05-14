@@ -16,6 +16,15 @@ MarketingKind = Literal[
     "review_response",  # Personalized response to a Google/Yelp review (Agency)
     "ad_copy",          # Etsy Ads / Google Ads short copy (Factory)
     "email_outreach",   # Cold outreach drafts to leads (Agency)
+    # --- HERALD: Social Media Manager (specialist subpackage) -----------------
+    # First-class kinds. Delegates to marketing/social_media_manager/. Brief +
+    # asset shape is the SocialBrief / SocialAsset over there; the wrapper
+    # handlers in marketing.py adapt MarketingBrief ↔ SocialBrief at the seam.
+    "content_calendar", # N-day calendar of post slots across platforms
+    "caption",          # Multi-platform caption variants with hook-formula variety
+    "repurpose",        # Source asset → fan-out of platform-native posts
+    "hashtag_pack",     # Broad + niche + local hashtag bundles
+    "brand_review",     # Quality-gate score on a draft post
 ]
 
 

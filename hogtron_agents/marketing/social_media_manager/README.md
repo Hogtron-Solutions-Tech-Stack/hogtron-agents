@@ -21,7 +21,10 @@ The SMM never calls ANVIL directly. It produces drafts and `publish_intent` seed
 
 ## Status
 
-🚧 Internal build, not yet wired into `Marketing.write()` dispatch. Kinds piloted standalone; promote into `MarketingKind` once stable.
+✅ **Wired into `Marketing.write()` dispatch** — first-class kinds. Any caller using the standard Marketing interface can dispatch all 5 SMM kinds; the legacy `SocialMediaManager().compose()` entrypoint still works too for callers that want the typed `SocialPost` / `BrandReviewScore` objects directly.
+
+**Not yet wired** (next steps if needed):
+- `Marketing.run_autonomous()` Layer 2 loop — its tool list is still `etsy_listing` + `social_post` only. The Bridge dispatches HERALD directives through `run_autonomous`, so until the SMM kinds are added there, "draft a LinkedIn post about X" via Bridge won't reach the SMM. Standard `Marketing.write(MarketingBrief(kind="caption", ...))` works today.
 
 | Kind | Status | Notes |
 |---|---|---|
@@ -41,6 +44,23 @@ Applied the `marketing:content-creation` skill's methodology and the Obsidian va
 - **`brand_review` kind** — deterministic checks (banned terms, char limit, hashtag count → `platform_fit` 0-10) combined with LLM scoring on `voice_fit`, `audience_language`, `hook_strength`, `cta_quality`. Returns weighted `overall` 0-10, verdict (`ship_it` / `minor_edits` / `rewrite` / `reject`), and up to 5 concrete rewrite suggestions. Banned-term hits cap overall at 4 (hard ship-blocker).
 
 ## Usage
+
+### Through the standard Marketing interface (recommended for most callers)
+
+```python
+from hogtron_agents.marketing import Marketing, MarketingBrief
+
+m = Marketing()
+asset = m.write(MarketingBrief(
+    kind="caption",
+    payload={"platform": "linkedin", "topic": "...", "n_variants": 3},
+    context={"anthropic_api_key": "..."},
+))
+# asset.payload["posts"] -> list of post dicts
+# asset.payload["summary"] -> strategy/rationale string
+```
+
+### Through the SMM directly (for callers that want typed SocialPost objects)
 
 ```python
 from hogtron_agents.marketing.social_media_manager import (
