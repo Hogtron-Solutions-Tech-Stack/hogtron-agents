@@ -11,6 +11,7 @@ from typing import Callable, Optional
 from .briefs import MarketingBrief, MarketingAsset, MarketingKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
 from . import _etsy_listing, _social_post, _autonomous
+from .social_media_manager import SocialMediaManager, SocialBrief
 
 Handler = Callable[["Marketing", MarketingBrief], MarketingAsset]
 
@@ -20,6 +21,9 @@ class Marketing:
 
     def __init__(self, telemetry: Optional[TelemetrySink] = None):
         self.telemetry = telemetry or NullSink()
+        # Shared SMM instance — reused across the 5 social kinds so we don't
+        # rebuild the dispatcher dict per call.
+        self._smm = SocialMediaManager(telemetry=self.telemetry)
         self._handlers: dict[MarketingKind, Handler] = {
             "etsy_listing": _do_etsy_listing,
             "social_post": _do_social_post,
@@ -27,6 +31,12 @@ class Marketing:
             "review_response": _do_review_response,
             "ad_copy": _do_ad_copy,
             "email_outreach": _do_email_outreach,
+            # HERALD: Social Media Manager (delegates to social_media_manager/)
+            "content_calendar": _do_smm("content_calendar"),
+            "caption":          _do_smm("caption"),
+            "repurpose":        _do_smm("repurpose"),
+            "hashtag_pack":     _do_smm("hashtag_pack"),
+            "brand_review":     _do_smm("brand_review"),
         }
 
     def write(self, brief: MarketingBrief) -> MarketingAsset:
@@ -87,3 +97,36 @@ def _do_ad_copy(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
 def _do_email_outreach(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
     """Net-new: cold outreach drafts to leads. No existing port source."""
     raise NotImplementedError("email_outreach not yet implemented — net-new kind")
+
+
+# --- HERALD: Social Media Manager delegation -----------------------------
+# Each of the 5 social kinds is a thin wrapper that converts MarketingBrief
+# to SocialBrief, calls SocialMediaManager.compose(), and converts the
+# returned SocialAsset back to a MarketingAsset. No business logic lives
+# here — the SMM subpackage owns it.
+
+def _do_smm(kind: str) -> Handler:
+    """Build a handler that routes the brief to SocialMediaManager.compose()."""
+    def _handler(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
+        social_asset = self._smm.compose(SocialBrief(
+            kind=kind,
+            payload=brief.payload,
+            context=brief.context,
+            requester=brief.requester,
+        ))
+        # Adapt SocialAsset → MarketingAsset. The SMM's `posts` list and
+        # `summary` ride in MarketingAsset.payload so callers using the
+        # standard Marketing interface get everything without importing
+        # SMM-specific types. Direct SMM users can still call
+        # SocialMediaManager().compose() and keep the typed SocialPost objects.
+        return MarketingAsset(
+            kind=brief.kind,
+            primary_text=social_asset.summary,
+            payload={
+                "summary": social_asset.summary,
+                "posts": [p.model_dump() for p in social_asset.posts],
+                **social_asset.payload,
+            },
+            metadata=social_asset.metadata,
+        )
+    return _handler
