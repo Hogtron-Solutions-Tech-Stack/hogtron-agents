@@ -5,7 +5,7 @@ aliases: [future-departments, dept-expansion]
 
 # Upcoming Departments
 
-The 5 core departments (Creative, Research, Marketing, Sales, Operations) are all live at Layer 1. This page tracks potential **future departments** that might graduate from being kinds inside an existing department.
+The 6 active departments (Creative, Research, Marketing, Sales, Operations, **Ledger**) are all live at Layer 1. This page tracks potential **future departments** that might graduate from being kinds inside an existing department.
 
 ## Candidate: Legal / Compliance
 
@@ -36,16 +36,11 @@ Not represented today. Could absorb:
 
 **Promotion trigger**: when we have 10+ active clients on retainer and manual retention is consuming significant time.
 
-## Candidate: Finance
+## ~~Candidate: Finance~~ → Promoted (Ledger)
 
-Not represented today. Would handle:
-- Invoicing
-- P&L tracking
-- Tax prep
-- Budget enforcement (linked to Layer 3's cost caps)
-- Cash-flow projections
+Promoted to a real department on 2026-05-13 as [[ledger-department|Ledger]]. See that page for the implementation. Phase 1 covers P&L snapshots, cost watchdog state, and AR rollups; Phase 2 wires Slack alerts; Phase 3 wires AR follow-up dispatch back into Sales.
 
-**Promotion trigger**: probably never as Layer 1 in the same shape — Finance is mostly QuickBooks integration + read-only reporting. May surface instead as Operations kinds (`generate_invoice`, `reconcile_stripe`).
+Out of scope (still): QuickBooks sync, tax prep, cash-flow projections. Those remain manual or get bolted on as new `LedgerKind` entries if they earn it.
 
 ## What about Engineering / IT?
 
