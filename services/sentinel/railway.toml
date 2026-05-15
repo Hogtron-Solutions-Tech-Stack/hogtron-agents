@@ -1,0 +1,27 @@
+# Sentinel sidecar — Railway deploy config.
+#
+# Deploy as a SECOND Railway service in the same project as Hogtron-Concierge.
+# Point the Concierge Node backend at this service's internal URL.
+#
+# Required env vars in Railway:
+#   SENTINEL_CALENDAR_PROVIDER = mock | google
+#   SENTINEL_API_KEY           = shared secret the Node backend must send
+#                                in X-Sentinel-Key header. REQUIRED in prod.
+#   PORT                       = (Railway sets automatically)
+#
+# When SENTINEL_CALENDAR_PROVIDER=google, also set:
+#   GOOGLE_OAUTH_CLIENT_ID
+#   GOOGLE_OAUTH_CLIENT_SECRET
+#   GOOGLE_OAUTH_REFRESH_TOKEN   (minted via services/sentinel/oauth_setup.py)
+#   GOOGLE_CALENDAR_ID           = "primary" or a specific calendar id
+
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -e . && pip install -r services/sentinel/requirements.txt"
+
+[deploy]
+startCommand = "gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 60 services.sentinel.app:create_app()"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

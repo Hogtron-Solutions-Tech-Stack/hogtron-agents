@@ -1,0 +1,13 @@
+# Sentinel sidecar runtime deps.
+# The hogtron-agents library itself is installed via `pip install -e ..`
+# from the services/sentinel/ dir during local dev; in Railway the
+# library is pulled as a dep of this service (see railway.toml).
+
+flask>=3.0,<4.0
+gunicorn>=21.2
+
+# Google Calendar provider (used when SENTINEL_CALENDAR_PROVIDER=google).
+# Lazy-imported so dev with the mock provider doesn't need them.
+google-api-python-client>=2.140
+google-auth>=2.30
+google-auth-oauthlib>=1.2
