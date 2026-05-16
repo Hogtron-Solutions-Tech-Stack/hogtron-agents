@@ -27,14 +27,27 @@ SentinelKind = Literal[
     "ingest_intake_form",  # validate + normalize a submitted form, return cleaned lead data
     "score_lead",          # rule-based hot/warm/cold triage
 
+    # --- HogTron-website inbound (Phase 2B) ---------------------------
+    # These are concrete adapters for the two forms on hogtron-solutions.com.
+    # Each wraps ingest_intake_form with a known schema + tenant context +
+    # Slack notification + score_lead. Kept as distinct kinds so the
+    # Bridge HUD can show counts per form type, not just a generic
+    # "intake_form" total.
+    "ingest_capacity_audit",   # capacity audit form on /free-audit
+    "ingest_contact_form",     # "get in touch" form on /contact
+
+    # --- Review response (Phase 3 — Sentinel + HERALD collab) ---------
+    # Sentinel polls GBP, asks Marketing (HERALD) to draft the reply,
+    # applies tenant's per-rating approval rules, posts or queues.
+    "respond_to_reviews",      # full orchestration: poll → draft → post/queue
+
     # --- Planned, not yet wired ---------------------------------------
-    # Intake (Phase 2B/C):  start_intake (when Flow D ships), route_inquiry,
-    #                       summarize_intake
-    # Comms (Phase 3, gated): send_confirmation_draft, send_confirmation,
+    # Intake (Phase 2C):    route_inquiry, summarize_intake
+    # Comms (Phase 4, gated): send_confirmation_draft, send_confirmation,
     #                         send_reminder_draft, send_reminder,
     #                         send_followup_draft, send_followup,
     #                         escalate_to_human
-    # Organize (Phase 4):   create_task, update_task, summarize_thread,
+    # Organize (Phase 5):   create_task, update_task, summarize_thread,
     #                       generate_brief
     # Payments (later, gated): quote_deposit
 ]
@@ -56,13 +69,16 @@ class SentinelBrief(BaseModel):
 class SentinelFinding(BaseModel):
     """Outbound result. `status` semantics depend on kind:
 
-    - find_slot:           "ok" | "no_availability" | "error"
-    - book_appointment:    "booked" | "conflict" | "error"
-    - reschedule:          "rescheduled" | "conflict" | "not_found" | "error"
-    - cancel:              "cancelled" | "not_found" | "error"
-    - check_conflicts:     "clear" | "conflict" | "error"
-    - ingest_intake_form:  "ok" | "validation_failed" | "error"
-    - score_lead:          "ok" | "error"
+    - find_slot:              "ok" | "no_availability" | "error"
+    - book_appointment:       "booked" | "conflict" | "error"
+    - reschedule:             "rescheduled" | "conflict" | "not_found" | "error"
+    - cancel:                 "cancelled" | "not_found" | "error"
+    - check_conflicts:        "clear" | "conflict" | "error"
+    - ingest_intake_form:     "ok" | "validation_failed" | "error"
+    - score_lead:             "ok" | "error"
+    - ingest_capacity_audit:  "ok" | "validation_failed" | "rate_limited" | "error"
+    - ingest_contact_form:    "ok" | "validation_failed" | "error"
+    - respond_to_reviews:     "ok" (always; per-review outcomes in payload) | "error"
     """
     kind: SentinelKind
     status: str

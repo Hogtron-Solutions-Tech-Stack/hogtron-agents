@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import MarketingBrief, MarketingAsset, MarketingKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _etsy_listing, _social_post, _autonomous
+from . import _etsy_listing, _social_post, _review_response, _autonomous
 from .social_media_manager import SocialMediaManager, SocialBrief
 
 Handler = Callable[["Marketing", MarketingBrief], MarketingAsset]
@@ -83,10 +83,9 @@ def _do_blog_post(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
 
 
 def _do_review_response(self: Marketing, brief: MarketingBrief) -> MarketingAsset:
-    """Port target: hogtron-dashboard AI Smart Review Responder."""
-    raise NotImplementedError(
-        "review_response pending migration from hogtron-dashboard AI Smart Review Responder"
-    )
+    """Generic per-tenant review responder. Sentinel orchestrates the
+    detection + posting; this handler just produces the reply text."""
+    return _review_response.review_response(brief)
 
 
 def _do_ad_copy(self: Marketing, brief: MarketingBrief) -> MarketingAsset:

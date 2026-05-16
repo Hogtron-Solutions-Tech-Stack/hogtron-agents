@@ -6,6 +6,14 @@ from ._calendar import (
     CalendarEvent,
     MockCalendarProvider,
 )
+from ._tenant_config import (
+    TenantConfig,
+    TenantConfigLoader,
+    TenantNotFound,
+    FileTenantConfigLoader,
+    InMemoryTenantConfigLoader,
+    loader_from_env,
+)
 
 __all__ = [
     "Sentinel",
@@ -16,4 +24,10 @@ __all__ = [
     "CalendarProvider",
     "CalendarEvent",
     "MockCalendarProvider",
+    "TenantConfig",
+    "TenantConfigLoader",
+    "TenantNotFound",
+    "FileTenantConfigLoader",
+    "InMemoryTenantConfigLoader",
+    "loader_from_env",
 ]

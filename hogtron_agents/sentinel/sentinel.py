@@ -24,6 +24,7 @@ from .._shared.telemetry import TelemetrySink, NullSink, working
 from . import (
     _find_slot, _book_appointment, _reschedule, _cancel, _check_conflicts,
     _ingest_intake_form, _score_lead,
+    _capacity_audit, _contact_form, _respond_to_reviews,
     _autonomous,
 )
 
@@ -54,6 +55,9 @@ class Sentinel:
             "check_conflicts": _do_check_conflicts,
             "ingest_intake_form": _do_ingest_intake_form,
             "score_lead": _do_score_lead,
+            "ingest_capacity_audit": _do_capacity_audit,
+            "ingest_contact_form": _do_contact_form,
+            "respond_to_reviews": _do_respond_to_reviews,
         }
 
     def do(self, brief: SentinelBrief) -> SentinelFinding:
@@ -145,3 +149,15 @@ def _do_ingest_intake_form(self: Sentinel, brief: SentinelBrief) -> SentinelFind
 
 def _do_score_lead(self: Sentinel, brief: SentinelBrief) -> SentinelFinding:
     return _score_lead.score_lead(brief)
+
+
+def _do_capacity_audit(self: Sentinel, brief: SentinelBrief) -> SentinelFinding:
+    return _capacity_audit.capacity_audit(brief)
+
+
+def _do_contact_form(self: Sentinel, brief: SentinelBrief) -> SentinelFinding:
+    return _contact_form.contact_form(brief)
+
+
+def _do_respond_to_reviews(self: Sentinel, brief: SentinelBrief) -> SentinelFinding:
+    return _respond_to_reviews.respond_to_reviews(brief)

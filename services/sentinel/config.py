@@ -40,8 +40,19 @@ def load_dotenv(path: Path = None) -> None:
 class Config:
     # Provider selection ----------------------------------------------------
     # "mock"   — in-memory, fixtures via seed payloads. Default for dev.
-    # "google" — GoogleCalendarProvider (next sub-step; needs OAuth creds).
+    # "google" — GoogleCalendarProvider (Phase 1B; needs OAuth creds).
     calendar_provider: str
+
+    # GBP reviews provider for the review-responder pipeline.
+    # "mock"   — MockGBPReviewsClient (in-memory).
+    # "google" — GoogleGBPReviewsClient (per-tenant OAuth refresh tokens).
+    gbp_provider: str
+
+    # Tenant config backend.
+    # "file"     — FileTenantConfigLoader, dir from TENANT_CONFIG_DIR
+    # "memory"   — InMemoryTenantConfigLoader (empty; for tests)
+    # "supabase" — reserved (falls back to memory currently)
+    tenant_config_backend: str
 
     # Auth ------------------------------------------------------------------
     # Shared secret in X-Sentinel-Key header. If empty, auth is OFF — only
@@ -52,16 +63,28 @@ class Config:
     port: int
     log_level: str
 
-    # Anthropic (for /sentinel/autonomous — added in a later step) ---------
+    # Anthropic (for Marketing.review_response drafts) ---------------------
     anthropic_api_key: str
+
+    # Slack (best-effort notifications) ------------------------------------
+    slack_bot_token: str
+    slack_leads_inbound_channel: str
+    slack_review_approval_channel: str
 
 
 def load() -> Config:
     load_dotenv()
     return Config(
         calendar_provider=os.environ.get("SENTINEL_CALENDAR_PROVIDER", "mock").lower(),
+        gbp_provider=os.environ.get("SENTINEL_GBP_PROVIDER", "mock").lower(),
+        tenant_config_backend=os.environ.get("TENANT_CONFIG_BACKEND", "file").lower(),
         sentinel_api_key=os.environ.get("SENTINEL_API_KEY", ""),
         port=int(os.environ.get("PORT", "5055")),
         log_level=os.environ.get("LOG_LEVEL", "info").upper(),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        slack_bot_token=os.environ.get("SLACK_BOT_TOKEN", ""),
+        slack_leads_inbound_channel=os.environ.get(
+            "SLACK_LEADS_INBOUND_CHANNEL", "leads-inbound"),
+        slack_review_approval_channel=os.environ.get(
+            "SLACK_REVIEW_APPROVAL_CHANNEL", "review-approvals"),
     )
