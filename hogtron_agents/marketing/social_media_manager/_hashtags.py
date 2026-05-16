@@ -107,7 +107,6 @@ def hashtag_pack(brief: SocialBrief) -> SocialAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=2500,
-        thinking={"type": "adaptive"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_HashtagPack,

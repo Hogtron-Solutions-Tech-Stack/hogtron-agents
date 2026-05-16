@@ -183,7 +183,6 @@ def brand_review(brief: SocialBrief) -> SocialAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=3000,
-        thinking={"type": "adaptive"},
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_LLMReview,

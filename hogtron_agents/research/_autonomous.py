@@ -321,7 +321,7 @@ def run_autonomous(
     directive: str,
     *,
     anthropic_api_key: str,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-sonnet-4-6",
     max_iterations: int = 10,
     progress_callback=None,
     should_cancel=None,

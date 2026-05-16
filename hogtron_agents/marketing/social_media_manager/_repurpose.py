@@ -141,7 +141,6 @@ def repurpose(brief: SocialBrief) -> SocialAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=6000,
-        thinking={"type": "adaptive"},
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_RepurposePlan,

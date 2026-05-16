@@ -171,7 +171,7 @@ def design_shirt(brief: CreativeBrief) -> CreativeAsset:
             "placement_y": direction.placement_y,
         },
         metadata={
-            "model": "claude-opus-4-7",
+            "model": "claude-sonnet-4-6",
             "recraft_model": result.get("model"),
             "recraft_style": result.get("style"),
         },
@@ -201,9 +201,8 @@ def _art_direct(
         "Produce an art direction for this shirt."
     )
     resp = client.messages.parse(
-        model="claude-opus-4-7",
+        model="claude-sonnet-4-6",
         max_tokens=4000,
-        thinking={"type": "adaptive"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
         output_format=ArtDirection,

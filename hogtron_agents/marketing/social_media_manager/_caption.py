@@ -149,7 +149,6 @@ def caption(brief: SocialBrief) -> SocialAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=3500,
-        thinking={"type": "adaptive"},
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_CaptionSet,

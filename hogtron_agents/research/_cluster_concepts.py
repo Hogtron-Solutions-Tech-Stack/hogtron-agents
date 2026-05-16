@@ -84,7 +84,7 @@ def cluster_concepts(brief: ResearchBrief) -> ResearchFinding:
         responsible for generating this (different stores, different calendars).
     brief.context:
       anthropic_api_key (optional, falls back to env)
-      model (optional, default 'claude-opus-4-7')
+      model (optional, default 'claude-sonnet-4-6')
     """
     signals = brief.payload.get("signals") or []
     max_concepts = int(brief.payload.get("max_concepts") or 5)
@@ -96,7 +96,7 @@ def cluster_concepts(brief: ResearchBrief) -> ResearchFinding:
             kind="cluster_concepts", status="error",
             reason="ANTHROPIC_API_KEY not set",
         )
-    model = brief.context.get("model") or "claude-opus-4-7"
+    model = brief.context.get("model") or "claude-sonnet-4-6"
 
     user_prompt = _build_user_prompt(signals, max_concepts, seasonal_hint)
     client = anthropic.Anthropic(api_key=key)
@@ -105,7 +105,6 @@ def cluster_concepts(brief: ResearchBrief) -> ResearchFinding:
         response = client.messages.parse(
             model=model,
             max_tokens=16000,
-            thinking={"type": "adaptive"},
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             output_format=_SynthesisOutput,

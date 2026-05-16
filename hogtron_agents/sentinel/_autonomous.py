@@ -265,11 +265,16 @@ def run_autonomous(
     max_iterations: int = 10,
     progress_callback=None,
     should_cancel=None,
+    max_cost_usd: Optional[float] = None,
 ) -> AutonomousResult:
     """Run Sentinel's agent loop on a natural-language directive.
 
     `sentinel_instance` should be a Sentinel() with telemetry and (Phase 1+)
     calendar provider injected — its kinds will be exposed to the agent.
+
+    `max_cost_usd` aborts the loop before the next model call if cumulative
+    estimated cost exceeds the cap. Useful for tenant-budgeted runs where
+    a concierge directive should not exceed a few cents.
     """
     findings, tools = build_tools(sentinel_instance)
 
@@ -284,6 +289,7 @@ def run_autonomous(
         role="sentinel.autonomous",
         progress_callback=progress_callback,
         should_cancel=should_cancel,
+        max_cost_usd=max_cost_usd,
     )
 
     return AutonomousResult(
@@ -301,7 +307,10 @@ def run_autonomous(
         duration_sec=result.duration_sec,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
-        cost_usd=estimate_cost_usd(model, result.input_tokens, result.output_tokens),
+        cost_usd=estimate_cost_usd(
+            model, result.input_tokens, result.output_tokens,
+            result.cache_write_tokens, result.cache_read_tokens,
+        ),
         stop_reason=result.stop_reason,
         error=result.error,
     )

@@ -49,26 +49,56 @@ class AgentResult:
     final_message: str           # the model's last text turn
     tool_calls: list[ToolCallLog]
     iterations: int              # how many model turns happened
-    input_tokens: int
+    input_tokens: int            # non-cached input tokens (billed at full input price)
     output_tokens: int
+    cache_write_tokens: int      # tokens written to ephemeral cache (billed at 1.25× input)
+    cache_read_tokens: int       # tokens read from ephemeral cache (billed at 0.10× input)
     duration_sec: float
-    stop_reason: str             # "end_turn" | "max_iterations" | "error"
+    stop_reason: str             # "end_turn" | "max_iterations" | "error" | "cancelled" | "budget_exceeded"
     error: Optional[str] = None
 
 
 # Per-million-tokens pricing for cost estimates. Update when Anthropic
-# changes pricing. These are USD per million tokens.
+# changes pricing. USD per million tokens.
+#   input        — non-cached fresh input
+#   output       — model output
+#   cache_write  — first-time cache writes (1.25× input)
+#   cache_read   — cache hits (0.10× input)
 _PRICES_USD_PER_MTOK = {
-    "claude-opus-4-7":           {"input": 15.00, "output": 75.00},
-    "claude-haiku-4-5-20251001": {"input": 1.00,  "output": 5.00},
-    # Fallback for unknown models — same as Opus 4.7 (overestimates rather than under)
-    "_default":                  {"input": 15.00, "output": 75.00},
+    "claude-opus-4-7":           {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "claude-sonnet-4-6":         {"input":  3.00, "output": 15.00, "cache_write":  3.75, "cache_read": 0.30},
+    "claude-haiku-4-5-20251001": {"input":  1.00, "output":  5.00, "cache_write":  1.25, "cache_read": 0.10},
+    "claude-haiku-4-5":          {"input":  1.00, "output":  5.00, "cache_write":  1.25, "cache_read": 0.10},
 }
 
 
-def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    p = _PRICES_USD_PER_MTOK.get(model) or _PRICES_USD_PER_MTOK["_default"]
-    return (input_tokens * p["input"] + output_tokens * p["output"]) / 1_000_000
+def estimate_cost_usd(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_write_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> float:
+    """USD cost estimate. Defaults cache token args to 0 so callers that
+    predate cache support still work.
+
+    Unknown models log a warning and use Sonnet pricing — failing loud is
+    better than silently over- or under-reporting at Opus rates."""
+    p = _PRICES_USD_PER_MTOK.get(model)
+    if p is None:
+        import warnings
+        warnings.warn(
+            f"estimate_cost_usd: unknown model {model!r}; falling back to "
+            "Sonnet 4.6 pricing. Update _PRICES_USD_PER_MTOK.",
+            stacklevel=2,
+        )
+        p = _PRICES_USD_PER_MTOK["claude-sonnet-4-6"]
+    return (
+        input_tokens        * p["input"]
+        + output_tokens     * p["output"]
+        + cache_write_tokens * p["cache_write"]
+        + cache_read_tokens  * p["cache_read"]
+    ) / 1_000_000
 
 
 def run_agent_loop(
@@ -77,14 +107,16 @@ def run_agent_loop(
     user_message: str,
     tools: list[AgentTool],
     api_key: str,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-sonnet-4-6",
     max_iterations: int = 10,
     max_tokens: int = 8000,
-    thinking: bool = True,
+    thinking: bool = False,
     telemetry: Optional[TelemetrySink] = None,
     role: str = "agent",
     progress_callback: Optional[Callable[[dict], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
+    max_cost_usd: Optional[float] = None,
+    tool_result_char_cap: int = 6000,
 ) -> AgentResult:
     """Run a Claude agent loop until end_turn or max_iterations.
 
@@ -106,16 +138,29 @@ def run_agent_loop(
     sink = telemetry or NullSink()
     client = anthropic.Anthropic(api_key=api_key)
 
+    # Tools array is stable across iterations of a single run, so we cache it.
+    # cache_control on the LAST tool tells Anthropic to cache everything up to
+    # and including that block. ~5-10k tokens of tool schemas re-read at 10% of
+    # input price on every subsequent iteration.
     tool_specs = [
         {"name": t.name, "description": t.description, "input_schema": t.input_schema}
         for t in tools
     ]
+    if tool_specs:
+        tool_specs[-1]["cache_control"] = {"type": "ephemeral"}
     handlers = {t.name: t.handler for t in tools}
 
-    messages: list[dict] = [{"role": "user", "content": user_message}]
+    # Initial user message gets cache_control so the conversation prefix stays
+    # cached as the loop appends assistant+tool_result turns. Content must be a
+    # block list for cache_control to attach.
+    messages: list[dict] = [{"role": "user", "content": [
+        {"type": "text", "text": user_message, "cache_control": {"type": "ephemeral"}},
+    ]}]
     tool_calls_log: list[ToolCallLog] = []
     total_input = 0
     total_output = 0
+    total_cache_write = 0
+    total_cache_read = 0
     t_start = time.time()
     last_tool: Optional[str] = None
 
@@ -131,6 +176,8 @@ def run_agent_loop(
                 iterations=iteration,
                 input_tokens=total_input,
                 output_tokens=total_output,
+                cache_write_tokens=total_cache_write,
+                cache_read_tokens=total_cache_read,
                 duration_sec=time.time() - t_start,
                 stop_reason="cancelled",
                 error="cancelled by caller",
@@ -149,12 +196,41 @@ def run_agent_loop(
             except Exception:  # noqa: BLE001
                 pass
 
+        # Budget guard: abort before making another (potentially expensive)
+        # model call if estimated cost so far already exceeds the cap.
+        if max_cost_usd is not None:
+            current_cost = estimate_cost_usd(
+                model, total_input, total_output,
+                total_cache_write, total_cache_read,
+            )
+            if current_cost >= max_cost_usd:
+                sink.log(role, f"budget exceeded: ${current_cost:.4f} >= "
+                         f"${max_cost_usd:.4f} cap at iter {iteration + 1}", "warn")
+                return AgentResult(
+                    success=False,
+                    final_message="",
+                    tool_calls=tool_calls_log,
+                    iterations=iteration,
+                    input_tokens=total_input,
+                    output_tokens=total_output,
+                    cache_write_tokens=total_cache_write,
+                    cache_read_tokens=total_cache_read,
+                    duration_sec=time.time() - t_start,
+                    stop_reason="budget_exceeded",
+                    error=f"per-run budget ${max_cost_usd:.4f} hit at ${current_cost:.4f}",
+                )
+
         sink.log(role, f"iter {iteration + 1}/{max_iterations}: model call")
         try:
             kwargs = {
                 "model": model,
                 "max_tokens": max_tokens,
-                "system": system,
+                # System as a block list with cache_control caches the (stable)
+                # system prompt across iterations + across runs within 5 min.
+                "system": [
+                    {"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral"}},
+                ],
                 "tools": tool_specs,
                 "messages": messages,
             }
@@ -169,13 +245,18 @@ def run_agent_loop(
                 iterations=iteration,
                 input_tokens=total_input,
                 output_tokens=total_output,
+                cache_write_tokens=total_cache_write,
+                cache_read_tokens=total_cache_read,
                 duration_sec=time.time() - t_start,
                 stop_reason="error",
                 error=f"Anthropic API error: {e}",
             )
 
-        total_input += resp.usage.input_tokens
+        total_input  += resp.usage.input_tokens
         total_output += resp.usage.output_tokens
+        # Cache token fields may be absent on older SDKs or non-cached calls.
+        total_cache_write += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
+        total_cache_read  += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
 
         if resp.stop_reason == "end_turn":
             final_text = "".join(b.text for b in resp.content if b.type == "text")
@@ -188,6 +269,8 @@ def run_agent_loop(
                 iterations=iteration + 1,
                 input_tokens=total_input,
                 output_tokens=total_output,
+                cache_write_tokens=total_cache_write,
+                cache_read_tokens=total_cache_read,
                 duration_sec=time.time() - t_start,
                 stop_reason="end_turn",
             )
@@ -223,9 +306,18 @@ def run_agent_loop(
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
-                "content": json.dumps(result, default=str)[:25000],  # cap to avoid context blowup
+                # Cap per-result chars so a chatty tool can't blow up context
+                # (and the replay cost on every subsequent iteration). 6000
+                # chars ≈ 1500 tokens — enough for a real result, small enough
+                # not to dominate the loop.
+                "content": json.dumps(result, default=str)[:tool_result_char_cap],
             })
 
+        # cache_control on the LAST tool_result extends the cached prefix to
+        # the end of this turn, so the next iteration reads everything from
+        # cache instead of re-billing it as fresh input.
+        if tool_results:
+            tool_results[-1]["cache_control"] = {"type": "ephemeral"}
         messages.append({"role": "user", "content": tool_results})
 
     # max_iterations exhausted without end_turn
@@ -237,6 +329,8 @@ def run_agent_loop(
         iterations=max_iterations,
         input_tokens=total_input,
         output_tokens=total_output,
+        cache_write_tokens=total_cache_write,
+        cache_read_tokens=total_cache_read,
         duration_sec=time.time() - t_start,
         stop_reason="max_iterations",
         error=f"agent did not converge in {max_iterations} iterations",

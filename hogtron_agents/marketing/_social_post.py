@@ -74,7 +74,7 @@ def social_post(brief: MarketingBrief) -> MarketingAsset:
       platform (optional, default 'pinterest') — only 'pinterest' in v1
     brief.context:
       anthropic_api_key (optional, falls back to env)
-      model (optional, default 'claude-opus-4-7')
+      model (optional, default 'claude-sonnet-4-6')
     """
     phrase = brief.payload.get("phrase")
     if not phrase:
@@ -93,7 +93,7 @@ def social_post(brief: MarketingBrief) -> MarketingAsset:
             kind="social_post",
             metadata={"error": "ANTHROPIC_API_KEY not set"},
         )
-    model = brief.context.get("model") or "claude-opus-4-7"
+    model = brief.context.get("model") or "claude-sonnet-4-6"
 
     user_prompt = (
         f"Phrase: {phrase!r}\n"
@@ -106,7 +106,6 @@ def social_post(brief: MarketingBrief) -> MarketingAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=2000,
-        thinking={"type": "adaptive"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_PinCopy,

@@ -84,7 +84,7 @@ def etsy_listing(brief: MarketingBrief) -> MarketingAsset:
       saturation (optional) — market crowding signal
     brief.context:
       anthropic_api_key (optional, falls back to env)
-      model (optional, default claude-opus-4-7)
+      model (optional, default claude-sonnet-4-6)
     """
     phrase = brief.payload.get("phrase")
     if not phrase:
@@ -96,7 +96,7 @@ def etsy_listing(brief: MarketingBrief) -> MarketingAsset:
             kind="etsy_listing",
             metadata={"error": "ANTHROPIC_API_KEY not set"},
         )
-    model = brief.context.get("model") or "claude-opus-4-7"
+    model = brief.context.get("model") or "claude-sonnet-4-6"
 
     user_prompt = (
         f"Phrase: {phrase!r}\n"
@@ -110,7 +110,6 @@ def etsy_listing(brief: MarketingBrief) -> MarketingAsset:
     resp = client.messages.parse(
         model=model,
         max_tokens=4000,
-        thinking={"type": "adaptive"},
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_Listing,

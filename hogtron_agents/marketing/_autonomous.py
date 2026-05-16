@@ -296,7 +296,7 @@ def build_tools(marketing_instance) -> tuple[list[MarketingAsset], list[AgentToo
 
 
 def run_autonomous(marketing_instance, directive, *, anthropic_api_key,
-                   model="claude-opus-4-7", max_iterations=8,
+                   model="claude-sonnet-4-6", max_iterations=8,
                    progress_callback=None, should_cancel=None) -> AutonomousResult:
     assets, tools = build_tools(marketing_instance)
     result = run_agent_loop(

@@ -82,6 +82,7 @@ class Sentinel:
         max_iterations: int = 10,
         progress_callback=None,
         should_cancel=None,
+        max_cost_usd: Optional[float] = None,
     ):
         """Chain Layer 1 kinds in response to a natural-language directive.
 
@@ -90,11 +91,16 @@ class Sentinel:
         novel synthesis. Override with 'claude-opus-4-7' for ambiguous
         intake triage or multi-party rescheduling.
 
+        `max_cost_usd` caps the per-run spend. Concierge directives should
+        typically cap at $0.05-0.10 — a tenant's chat shouldn't burn
+        dollars on a single booking.
+
         Example:
             s = Sentinel(telemetry=...)
             result = s.run_autonomous(
                 "Caller wants to reschedule appointment 482 to next Tuesday afternoon",
                 anthropic_api_key=...,
+                max_cost_usd=0.10,
             )
             print(result.summary)
 
@@ -107,6 +113,7 @@ class Sentinel:
             max_iterations=max_iterations,
             progress_callback=progress_callback,
             should_cancel=should_cancel,
+            max_cost_usd=max_cost_usd,
         )
 
 
