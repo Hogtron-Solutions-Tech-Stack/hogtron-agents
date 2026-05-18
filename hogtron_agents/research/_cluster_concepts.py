@@ -9,9 +9,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
+import anthropic  # kept for anthropic.APIError exception catch below
 from pydantic import BaseModel, Field
 
+from .._shared.claude_router import route_messages_parse
 from .briefs import ResearchBrief, ResearchFinding
 
 
@@ -99,15 +100,16 @@ def cluster_concepts(brief: ResearchBrief) -> ResearchFinding:
     model = brief.context.get("model") or "claude-sonnet-4-6"
 
     user_prompt = _build_user_prompt(signals, max_concepts, seasonal_hint)
-    client = anthropic.Anthropic(api_key=key)
 
     try:
-        response = client.messages.parse(
+        response = route_messages_parse(
+            agent="research.cluster_concepts",
             model=model,
             max_tokens=16000,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             output_format=_SynthesisOutput,
+            api_key=key,
         )
     except anthropic.APIError as e:
         return ResearchFinding(

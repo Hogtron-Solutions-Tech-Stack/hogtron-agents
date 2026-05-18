@@ -21,9 +21,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from ..._shared.claude_router import route_messages_parse
 from .briefs import SocialBrief, SocialAsset, BrandReviewScore
 from ._voice import (
     BANNED_TERMS, SOFT_FLAGS, PLATFORM_STRUCTURE,
@@ -179,13 +179,14 @@ def brand_review(brief: SocialBrief) -> SocialAsset:
         "criterion."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.smm.brand_review",
         model=model,
         max_tokens=3000,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_LLMReview,
+        api_key=key,
     )
 
     llm: _LLMReview = resp.parsed_output

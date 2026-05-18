@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import os
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from .._shared.claude_router import route_messages_parse
 from .briefs import MarketingBrief, MarketingAsset
 
 
@@ -102,13 +102,14 @@ def social_post(brief: MarketingBrief) -> MarketingAsset:
         "Write the Pinterest pin copy for this shirt."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.social_post",
         model=model,
         max_tokens=2000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_PinCopy,
+        api_key=key,
     )
 
     copy: _PinCopy = resp.parsed_output

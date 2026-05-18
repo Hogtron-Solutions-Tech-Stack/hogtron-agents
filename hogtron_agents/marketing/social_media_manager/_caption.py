@@ -11,9 +11,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from ..._shared.claude_router import route_messages_parse
 from .briefs import SocialBrief, SocialAsset, SocialPost, SocialPlatform
 from ._voice import (
     HOOK_FORMULAS, PLATFORM_STRUCTURE,
@@ -145,13 +145,14 @@ def caption(brief: SocialBrief) -> SocialAsset:
         f"different hook_formula from the list above."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.smm.caption",
         model=model,
         max_tokens=3500,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_CaptionSet,
+        api_key=key,
     )
 
     parsed: _CaptionSet = resp.parsed_output

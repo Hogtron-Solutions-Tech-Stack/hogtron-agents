@@ -14,9 +14,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from ..._shared.claude_router import route_messages_parse
 from .briefs import SocialBrief, SocialAsset, SocialPlatform
 from ._vault_loader import build_voice_context_block
 
@@ -103,13 +103,14 @@ def hashtag_pack(brief: SocialBrief) -> SocialAsset:
         "Build the tiered hashtag pack + keyword phrases."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.smm.hashtags",
         model=model,
         max_tokens=2500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_HashtagPack,
+        api_key=key,
     )
 
     pack: _HashtagPack = resp.parsed_output

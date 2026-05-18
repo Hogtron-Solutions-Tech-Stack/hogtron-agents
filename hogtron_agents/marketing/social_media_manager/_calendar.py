@@ -14,9 +14,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from ..._shared.claude_router import route_messages_parse
 from .briefs import SocialBrief, SocialAsset, SocialPost, SocialPlatform
 from ._voice import voice_guardrails_block
 from ._vault_loader import build_voice_context_block
@@ -146,13 +146,14 @@ def content_calendar(brief: SocialBrief) -> SocialAsset:
         voice_context=voice_context,
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.smm.calendar",
         model=model,
         max_tokens=6000,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_Calendar,
+        api_key=key,
     )
 
     parsed: _Calendar = resp.parsed_output

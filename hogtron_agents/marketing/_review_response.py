@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import os
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from .._shared.claude_router import route_messages_parse
 from .briefs import MarketingBrief, MarketingAsset
 
 
@@ -176,13 +176,14 @@ def review_response(brief: MarketingBrief) -> MarketingAsset:
         "Write the reply now."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.review_response",
         model=model,
         max_tokens=1500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_ReviewReply,
+        api_key=key,
     )
 
     reply: _ReviewReply = resp.parsed_output

@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-import anthropic
 from pydantic import BaseModel, Field
 
+from .._shared.claude_router import route_messages_parse
 from .briefs import MarketingBrief, MarketingAsset
 
 
@@ -106,13 +106,14 @@ def etsy_listing(brief: MarketingBrief) -> MarketingAsset:
         "Write the Etsy listing for this shirt."
     )
 
-    client = anthropic.Anthropic(api_key=key)
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="marketing.etsy_listing",
         model=model,
         max_tokens=4000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
         output_format=_Listing,
+        api_key=key,
     )
 
     listing: _Listing = resp.parsed_output
