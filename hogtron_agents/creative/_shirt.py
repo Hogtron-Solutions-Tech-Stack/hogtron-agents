@@ -21,10 +21,10 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from .._shared import recraft
+from .._shared.claude_router import route_messages_parse
 from .briefs import CreativeBrief, CreativeAsset
 
 
@@ -187,12 +187,21 @@ def _art_direct(
     saturation: Optional[str],
     api_key: Optional[str],
 ) -> ArtDirection:
+    """Claude art-direction call. Routed through claude_router so that:
+      - Default backend is API (Sean's approved framing)
+      - Max subscription is used opportunistically when HOGTRON_TRY_MAX=true
+        and the quota gate is green
+      - Telemetry is logged for every call to %LOCALAPPDATA%\\HogTron\\logs\\
+    """
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    # API key only enforced on the canonical path; router will fail loudly
+    # if it's needed for fallback and missing. We still require it here to
+    # preserve the existing "fail before doing any expensive work" pattern.
+    if not key and os.environ.get("HOGTRON_TRY_MAX", "false").lower() != "true":
         raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. Pass via brief.context or env."
+            "ANTHROPIC_API_KEY not set. Pass via brief.context or env, "
+            "or set HOGTRON_TRY_MAX=true to attempt Max subscription first."
         )
-    client = anthropic.Anthropic(api_key=key)
 
     prompt = (
         f"Phrase: {phrase!r}\n"
@@ -200,11 +209,13 @@ def _art_direct(
         f"Market saturation: {saturation or 'unspecified'}\n\n"
         "Produce an art direction for this shirt."
     )
-    resp = client.messages.parse(
+    resp = route_messages_parse(
+        agent="creative.shirt",
         model="claude-sonnet-4-6",
         max_tokens=4000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
         output_format=ArtDirection,
+        api_key=key,
     )
     return resp.parsed_output

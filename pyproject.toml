@@ -18,6 +18,10 @@ dependencies = [
     # Sentinel Phase 2A — intake form validation + phone normalization
     "email-validator>=2.1",
     "phonenumbers>=8.13",
+    # claude_router Phase 0 — opportunistic Max subscription routing.
+    # Imported lazily by hogtron_agents/_shared/claude_router.py only when
+    # HOGTRON_TRY_MAX=true. Safe to omit on Railway/CI (API-only paths).
+    "claude-agent-sdk>=0.1.81",
 ]
 
 [tool.setuptools.packages.find]
