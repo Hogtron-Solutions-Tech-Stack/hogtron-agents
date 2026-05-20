@@ -12,7 +12,7 @@ from typing import Optional
 import anthropic  # kept for anthropic.APIError exception catch below
 from pydantic import BaseModel, Field
 
-from .._shared.claude_router import route_messages_parse
+from .._shared.claude_router import llm_available, route_messages_parse
 from .briefs import ResearchBrief, ResearchFinding
 
 
@@ -92,10 +92,10 @@ def cluster_concepts(brief: ResearchBrief) -> ResearchFinding:
     seasonal_hint = brief.payload.get("seasonal_hint") or ""
 
     key = brief.context.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    if not llm_available(key):
         return ResearchFinding(
             kind="cluster_concepts", status="error",
-            reason="ANTHROPIC_API_KEY not set",
+            reason="No LLM backend configured",
         )
     model = brief.context.get("model") or "claude-sonnet-4-6"
 

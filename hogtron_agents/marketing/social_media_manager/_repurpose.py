@@ -15,7 +15,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ..._shared.claude_router import route_messages_parse
+from ..._shared.claude_router import llm_available, route_messages_parse
 from .briefs import (
     SocialBrief, SocialAsset, SocialPost, SocialPlatform, SourceKind,
 )
@@ -109,10 +109,10 @@ def repurpose(brief: SocialBrief) -> SocialAsset:
         )
 
     key = brief.context.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    if not llm_available(key):
         return SocialAsset(
             kind="repurpose",
-            metadata={"error": "ANTHROPIC_API_KEY not set"},
+            metadata={"error": "No LLM backend configured"},
         )
     model = brief.context.get("model") or "claude-sonnet-4-6"
     max_posts = int(brief.payload.get("max_posts") or 8)
