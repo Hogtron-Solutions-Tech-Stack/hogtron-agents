@@ -1,9 +1,8 @@
-"""Creative department — Layer 2 autonomous agent loop.
+"""Creative department -- Layer 2 autonomous agent loop.
 
-Currently only `shirt` is piloted, so the agent loop is one-tool today.
-Same shape as other depts — kept consistent so Layer 3 (CEO loop) dispatches
-uniformly. When pdf_page / mockup / proposal_cover / canva_asset ship as
-real handlers, they get added to build_tools() automatically.
+shirt + mockup are live. Same shape as other depts -- kept consistent
+so Layer 3 (CEO loop) dispatches uniformly. When pdf_page / proposal_cover /
+canva_asset ship as real handlers, they get added to build_tools() automatically.
 """
 from __future__ import annotations
 
@@ -22,29 +21,40 @@ YOUR ROLE
 - You report to the CEOs (Sean + Anthony). You produce visual deliverables:
   POD shirt designs, PDF pages, client website mockups, proposal covers,
   Canva assets.
-- Every visual you produce must pass HogTron's IP guardrails — no
+- Every visual you produce must pass HogTron's IP guardrails -- no
   characters, brands, lyrics, celebrities, sports teams. Generic motifs
   only.
 
 YOUR TOOLS
-You have 1 Layer 1 kind available today:
+You have 2 kinds available today:
+
   - shirt: Claude art-direct + Recraft render -> transparent PNG + art
     direction (shirt color, typography, layout, accent, palette, mood,
     Recraft prompt, placement_y). Cost: ~$0.05 Claude + ~$0.05 Recraft
     per shirt.
 
+  - mockup: Claude plans palette/sections/copy + Claude renders a complete
+    single-file HTML website mockup for a client prospect. Takes audit data
+    from ORACLE, returns a local HTML file path + file URI. Use this when
+    the directive mentions a client domain, business name, or audit results
+    and asks for a mockup, redesign, or website preview.
+    Cost: ~$0.15-0.25 Claude per mockup (two-phase: plan + render).
+
 OPERATING PRINCIPLES
-- Phrases arriving here have ALREADY been cleared by Research(ip_clear).
-  Do not re-vet — trust the input.
-- The art around the phrase still must not introduce IP risk. The shirt
-  handler's SYSTEM_PROMPT enforces this; you don't need to.
-- Be efficient with Recraft credits — only one render per phrase unless
+- Shirt phrases arriving here have ALREADY been cleared by Research(ip_clear).
+  Do not re-vet -- trust the input.
+- The art around a shirt phrase still must not introduce IP risk.
+- Be efficient with Recraft credits -- only one render per phrase unless
   the directive asks for variants.
+- For mockups, include as much audit context as you have -- the more
+  audit_data you pass, the sharper the top_fix hook and design plan.
 
 OUTPUT FORMAT
-End your turn with a tight summary listing each design produced, key
-art-direction attributes (color, typography, placement_y), and any
-notes for the CEO."""
+End your turn with a tight summary:
+  - For shirts: each design produced, key art-direction attributes (color,
+    typography, placement_y), any notes for the CEO.
+  - For mockups: business name, file_path of the saved HTML, top_fix hook
+    (the pitch line FORGE surfaced), and any design notes."""
 
 
 @dataclass
@@ -72,56 +82,118 @@ def build_tools(creative_instance) -> tuple[list[CreativeAsset], list[AgentTool]
             requester="creative.autonomous",
         ))
         assets.append(asset)
-        # Trim for context window: drop full art_direction dict, keep the keys the agent reasons about
         ad = asset.artifacts.get("art_direction", {})
         return {
-            "kind": asset.kind, "primary_url": asset.primary_url,
+            "kind": asset.kind,
+            "primary_url": asset.primary_url,
             "file_path": asset.file_path,
             "shirt_color": ad.get("shirt_color"),
             "typography_style": ad.get("typography_style"),
             "placement_y": ad.get("placement_y"),
             "mood_tags": ad.get("mood_tags"),
+            "top_fix": asset.metadata.get("top_fix"),
+            "html_bytes": asset.artifacts.get("html_bytes"),
             "metadata": asset.metadata,
         }
 
-    return assets, [
-        AgentTool(
-            name="shirt",
-            description=(
-                "Generate a POD shirt design from a cleared phrase. Returns "
-                "the Recraft URL + local file path + key art-direction "
-                "fields (color, typography, placement_y, mood). "
-                "Cost: ~$0.10 per call (Claude + Recraft)."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "phrase": {
-                        "type": "string",
-                        "description": "The cleared shirt phrase. Must already be IP-clear.",
-                    },
-                    "audience": {
-                        "type": "string",
-                        "description": "Who buys this (e.g. 'Father's Day gift for casual grilling dads')",
-                    },
-                    "saturation": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "Market crowding signal from Research, if known.",
-                    },
-                },
-                "required": ["phrase"],
-            },
-            handler=lambda phrase, audience="", saturation="medium": _call(
-                "shirt",
-                {"phrase": phrase, "audience": audience, "saturation": saturation},
-            ),
+    shirt_tool = AgentTool(
+        name="shirt",
+        description=(
+            "Generate a POD shirt design from a cleared phrase. Returns "
+            "the Recraft URL + local file path + key art-direction "
+            "fields (color, typography, placement_y, mood). "
+            "Cost: ~$0.10 per call (Claude + Recraft)."
         ),
-    ]
+        input_schema={
+            "type": "object",
+            "properties": {
+                "phrase": {
+                    "type": "string",
+                    "description": "The cleared shirt phrase. Must already be IP-clear.",
+                },
+                "audience": {
+                    "type": "string",
+                    "description": "Who buys this (e.g. Father's Day gift for dads)",
+                },
+                "saturation": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "Market crowding signal from Research, if known.",
+                },
+            },
+            "required": ["phrase"],
+        },
+        handler=lambda phrase, audience="", saturation="medium": _call(
+            "shirt",
+            {"phrase": phrase, "audience": audience, "saturation": saturation},
+        ),
+    )
+
+    mockup_tool = AgentTool(
+        name="mockup",
+        description=(
+            "Generate a complete single-file HTML website mockup for a client prospect. "
+            "Claude plans the palette, sections, and copy, then renders the full HTML. "
+            "Returns a local file path + file URI to the saved HTML. "
+            "Use when the directive references a client domain, business name, or audit "
+            "results and asks for a redesign, mockup, or website preview. "
+            "Cost: ~$0.15-0.25 per call (two Claude calls: plan + render)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "business_name": {
+                    "type": "string",
+                    "description": "Display name of the client business.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "The client live domain, e.g. valleyhvac.com. Optional.",
+                },
+                "audit_data": {
+                    "type": "object",
+                    "description": (
+                        "Audit results from ORACLE (seo_audit or geo_audit payload). "
+                        "Pass overall_score, pillars, issues, gbp_status, etc."
+                    ),
+                },
+                "address": {
+                    "type": "string",
+                    "description": "Physical address for footer and contact section.",
+                },
+                "phone": {
+                    "type": "string",
+                    "description": "Phone number for footer and contact section.",
+                },
+                "business_type": {
+                    "type": "string",
+                    "description": (
+                        "Type of business -- drives sections and color palette. "
+                        "E.g. HVAC, chiropractor, restaurant, dental practice."
+                    ),
+                },
+            },
+            "required": ["business_name"],
+        },
+        handler=lambda business_name, url="", audit_data=None,
+                     address="", phone="", business_type="local business": _call(
+            "mockup",
+            {
+                "business_name": business_name,
+                "url": url,
+                "audit_data": audit_data or {},
+                "address": address,
+                "phone": phone,
+                "business_type": business_type,
+            },
+        ),
+    )
+
+    return assets, [shirt_tool, mockup_tool]
 
 
 def run_autonomous(creative_instance, directive, *, anthropic_api_key,
-                   model="claude-sonnet-4-6", max_iterations=8,
+                   model="claude-sonnet-4-6", max_iterations=6,
                    progress_callback=None, should_cancel=None) -> AutonomousResult:
     assets, tools = build_tools(creative_instance)
     result = run_agent_loop(

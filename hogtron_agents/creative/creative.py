@@ -13,7 +13,7 @@ from typing import Callable, Optional
 
 from .briefs import CreativeBrief, CreativeAsset, BriefKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
-from . import _shirt, _autonomous
+from . import _shirt, _mockup, _autonomous
 
 Handler = Callable[["Creative", CreativeBrief], CreativeAsset]
 
@@ -76,8 +76,8 @@ def _design_pdf_page(self: Creative, brief: CreativeBrief) -> CreativeAsset:
 
 
 def _design_mockup(self: Creative, brief: CreativeBrief) -> CreativeAsset:
-    """Port target: hogtron-dashboard mockup generation + Theme Studio."""
-    raise NotImplementedError("mockup handler pending migration from hogtron-dashboard")
+    """Two-phase mockup: Claude plans palette/sections → Claude renders full HTML."""
+    return _mockup.design_mockup(brief)
 
 
 def _design_proposal_cover(self: Creative, brief: CreativeBrief) -> CreativeAsset:

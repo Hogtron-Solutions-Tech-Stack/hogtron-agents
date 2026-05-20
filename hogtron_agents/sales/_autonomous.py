@@ -116,7 +116,7 @@ def build_tools(sales_instance) -> tuple[list[SalesAsset], list[AgentTool]]:
 
 
 def run_autonomous(sales_instance, directive, *, anthropic_api_key,
-                   model="claude-sonnet-4-6", max_iterations=8,
+                   model="claude-sonnet-4-6", max_iterations=6,
                    progress_callback=None, should_cancel=None) -> AutonomousResult:
     assets, tools = build_tools(sales_instance)
     result = run_agent_loop(

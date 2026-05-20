@@ -322,7 +322,7 @@ def run_autonomous(
     *,
     anthropic_api_key: str,
     model: str = "claude-sonnet-4-6",
-    max_iterations: int = 10,
+    max_iterations: int = 6,
     progress_callback=None,
     should_cancel=None,
 ) -> AutonomousResult:

@@ -206,7 +206,7 @@ def build_tools(operations_instance) -> tuple[list[OperationsResult], list[Agent
 
 
 def run_autonomous(operations_instance, directive, *, anthropic_api_key,
-                   model="claude-sonnet-4-6", max_iterations=10,
+                   model="claude-sonnet-4-6", max_iterations=6,
                    progress_callback=None, should_cancel=None,
                    autonomy_rung: int = 0) -> AutonomousResult:
     results, tools = build_tools(operations_instance)
