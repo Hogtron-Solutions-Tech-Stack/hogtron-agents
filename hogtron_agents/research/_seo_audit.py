@@ -277,27 +277,26 @@ def _call_gemini(prompt: str, api_key: str) -> str:
 
 
 def _call_anthropic(prompt: str, api_key: str) -> str:
-    payload = {
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 4000, "temperature": 0.2,
-        "system": _SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    headers = {
-        "x-api-key": api_key, "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    for _ in range(3):
-        resp = requests.post("https://api.anthropic.com/v1/messages",
-                             headers=headers, json=payload, timeout=60)
-        if resp.status_code == 429:
-            time.sleep(8)
-            continue
-        if resp.status_code == 401:
-            raise ValueError("Invalid Anthropic API key")
-        resp.raise_for_status()
-        return resp.json()["content"][0]["text"]
-    raise RuntimeError("Anthropic rate-limited after 3 attempts")
+    """Route Anthropic SEO audit through the shared router.
+
+    See docs/LLM_PROTOCOL.md — direct anthropic.* / requests.post to
+    api.anthropic.com is disallowed so HOGTRON_FORCE_BACKEND=local can
+    redirect every Anthropic call to Ollama in one place.
+    """
+    from hogtron_agents._shared import claude_router
+    resp = claude_router.route_messages_create(
+        agent="research.seo_audit.anthropic",
+        model="claude-haiku-4-5-20251001",
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4000,
+        api_key=api_key or None,
+    )
+    return "".join(
+        getattr(b, "text", "") or ""
+        for b in (resp.content or [])
+        if getattr(b, "type", None) == "text"
+    )
 
 
 def _call_xai(prompt: str, api_key: str) -> str:
@@ -341,12 +340,40 @@ def _parse_json(raw: str) -> dict:
         return json.loads(relaxed)
 
 
+def _call_local(prompt: str, api_key: str) -> str:
+    """Route SEO audit through the local LLM router (Ollama, etc.).
+
+    The `api_key` argument is ignored — the router reads its config from
+    HOGTRON_FORCE_BACKEND / LOCAL_LLM_* env vars. Kept in the signature so
+    the dispatcher table stays uniform with the other callers.
+    """
+    from hogtron_agents._shared import claude_router
+    resp = claude_router.route_messages_create(
+        agent="research.seo_audit.local",
+        model="claude-haiku-4-5-20251001",
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4000,
+    )
+    return "".join(
+        getattr(b, "text", "") or ""
+        for b in (resp.content or [])
+        if getattr(b, "type", None) == "text"
+    )
+
+
 _PROVIDER_ENV = {
     "gemini": "GEMINI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "xai": "XAI_API_KEY",
+    # "local" needs no env key — handled in seo_audit() below.
 }
-_CALLERS = {"gemini": _call_gemini, "anthropic": _call_anthropic, "xai": _call_xai}
+_CALLERS = {
+    "gemini": _call_gemini,
+    "anthropic": _call_anthropic,
+    "xai": _call_xai,
+    "local": _call_local,
+}
 
 
 # --- Public handler -----------------------------------------------------
@@ -357,8 +384,13 @@ def seo_audit(brief: ResearchBrief) -> ResearchFinding:
     brief.payload:
       url (required)
     brief.context:
-      provider (optional, default 'gemini'): gemini | anthropic | xai
-      <provider>_api_key (optional, falls back to env)
+      provider (optional, default 'gemini'): gemini | anthropic | xai | local
+      <provider>_api_key (optional, falls back to env; ignored for local)
+
+    When HOGTRON_FORCE_BACKEND=local is set in the environment, the provider
+    is forced to "local" regardless of what the caller asked for. This is
+    the safety net against accidental Claude API spend during local-mode
+    development.
     """
     url = (brief.payload.get("url") or "").strip()
     if not url:
@@ -367,19 +399,28 @@ def seo_audit(brief: ResearchBrief) -> ResearchFinding:
         url = "https://" + url
 
     provider = (brief.context.get("provider") or "gemini").lower()
+    # Safety net: when the platform is forced to the local backend, never
+    # spend tokens on a remote provider regardless of what the caller asked
+    # for. This mirrors the Dashboard's SEO_AUDIT_PROVIDER override in
+    # Hogtron-Dashboard/config.py.
+    if os.environ.get("HOGTRON_FORCE_BACKEND", "").strip().lower() == "local":
+        provider = "local"
     if provider not in _CALLERS:
-        raise ValueError(f"unknown provider {provider!r}; must be gemini|anthropic|xai")
+        raise ValueError(f"unknown provider {provider!r}; must be {'|'.join(_CALLERS)}")
 
-    api_key = (
-        brief.context.get(f"{provider}_api_key")
-        or os.environ.get(_PROVIDER_ENV[provider])
-    )
-    if not api_key:
-        return ResearchFinding(
-            kind="seo_audit", status="error",
-            reason=f"{_PROVIDER_ENV[provider]} not set",
-            payload={"url": url, "provider": provider},
+    if provider == "local":
+        api_key = ""  # router handles its own config
+    else:
+        api_key = (
+            brief.context.get(f"{provider}_api_key")
+            or os.environ.get(_PROVIDER_ENV[provider])
         )
+        if not api_key:
+            return ResearchFinding(
+                kind="seo_audit", status="error",
+                reason=f"{_PROVIDER_ENV[provider]} not set",
+                payload={"url": url, "provider": provider},
+            )
 
     try:
         scraped = _scrape(url)
