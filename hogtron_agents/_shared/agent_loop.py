@@ -20,6 +20,7 @@ from typing import Any, Callable, Optional
 
 import anthropic
 
+from . import claude_router
 from .telemetry import TelemetrySink, NullSink
 
 
@@ -136,8 +137,6 @@ def run_agent_loop(
         call. Useful for the Bridge's cancel button.
     """
     sink = telemetry or NullSink()
-    client = anthropic.Anthropic(api_key=api_key)
-
     # Tools array is stable across iterations of a single run, so we cache it.
     # cache_control on the LAST tool tells Anthropic to cache everything up to
     # and including that block. ~5-10k tokens of tool schemas re-read at 10% of
@@ -236,7 +235,11 @@ def run_agent_loop(
             }
             if thinking:
                 kwargs["thinking"] = {"type": "adaptive"}
-            resp = client.messages.create(**kwargs)
+            resp = claude_router.route_messages_create(
+                agent=role,
+                api_key=api_key,
+                **kwargs,
+            )
         except anthropic.APIError as e:
             return AgentResult(
                 success=False,
@@ -252,14 +255,14 @@ def run_agent_loop(
                 error=f"Anthropic API error: {e}",
             )
 
-        total_input  += resp.usage.input_tokens
-        total_output += resp.usage.output_tokens
+        total_input  += int(resp.usage.get("input_tokens", 0) or 0)
+        total_output += int(resp.usage.get("output_tokens", 0) or 0)
         # Cache token fields may be absent on older SDKs or non-cached calls.
-        total_cache_write += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
-        total_cache_read  += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
+        total_cache_write += int(resp.usage.get("cache_creation_input_tokens", 0) or 0)
+        total_cache_read  += int(resp.usage.get("cache_read_input_tokens", 0) or 0)
 
         if resp.stop_reason == "end_turn":
-            final_text = "".join(b.text for b in resp.content if b.type == "text")
+            final_text = "".join(_block_text(b) for b in resp.content if _block_type(b) == "text")
             sink.log(role, f"end_turn after {iteration + 1} iter(s), "
                      f"{len(tool_calls_log)} tool call(s)")
             return AgentResult(
@@ -280,7 +283,7 @@ def run_agent_loop(
         messages.append({"role": "assistant", "content": resp.content})
         tool_results = []
         for block in resp.content:
-            if block.type != "tool_use":
+            if _block_type(block) != "tool_use":
                 continue
             handler = handlers.get(block.name)
             t_tool = time.time()
@@ -335,3 +338,15 @@ def run_agent_loop(
         stop_reason="max_iterations",
         error=f"agent did not converge in {max_iterations} iterations",
     )
+
+
+def _block_type(block: Any) -> str | None:
+    if isinstance(block, dict):
+        return block.get("type")
+    return getattr(block, "type", None)
+
+
+def _block_text(block: Any) -> str:
+    if isinstance(block, dict):
+        return block.get("text") or ""
+    return getattr(block, "text", "") or ""

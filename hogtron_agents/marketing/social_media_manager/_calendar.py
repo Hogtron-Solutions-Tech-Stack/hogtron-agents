@@ -16,7 +16,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from ..._shared.claude_router import route_messages_parse
+from ..._shared.claude_router import llm_available, route_messages_parse
 from .briefs import SocialBrief, SocialAsset, SocialPost, SocialPlatform
 from ._voice import voice_guardrails_block
 from ._vault_loader import build_voice_context_block
@@ -115,10 +115,10 @@ def content_calendar(brief: SocialBrief) -> SocialAsset:
         )
 
     key = brief.context.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    if not llm_available(key):
         return SocialAsset(
             kind="content_calendar",
-            metadata={"error": "ANTHROPIC_API_KEY not set"},
+            metadata={"error": "No LLM backend configured"},
         )
     model = brief.context.get("model") or "claude-sonnet-4-6"
     posts_per_week = int(brief.payload.get("posts_per_week") or 5)

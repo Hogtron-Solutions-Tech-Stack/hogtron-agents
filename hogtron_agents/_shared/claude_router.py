@@ -31,9 +31,11 @@ import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional, Type, Union
 
 import anthropic
+import requests
 from pydantic import BaseModel, ValidationError
 
 from . import quota_gate
@@ -80,7 +82,7 @@ class RouterResponse:
     stop_reason: str                    # "end_turn" | "max_tokens" | "tool_use" | ...
     usage: dict                         # input/output/cache_creation/cache_read tokens
     parsed_output: Any = None           # only populated for .parse() — the Pydantic instance
-    backend: str = "api"                # "api" | "max"
+    backend: str = "api"                # "api" | "max" | "local"
     used_subscription: bool = False
     fallback_reason: Optional[str] = None
     elapsed_sec: float = 0.0
@@ -154,6 +156,58 @@ def _credentials_present() -> bool:
 
 def _is_dry_run() -> bool:
     return os.environ.get("HOGTRON_DRY_RUN", "").strip().lower() == "true"
+
+
+def _force_backend() -> str:
+    return (
+        os.environ.get("HOGTRON_FORCE_BACKEND")
+        or os.environ.get("HOGTRON_LLM_BACKEND")
+        or ""
+    ).strip().lower()
+
+
+def _local_base_url() -> str:
+    return os.environ.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
+
+
+def _local_model(fallback: str) -> str:
+    return os.environ.get("LOCAL_LLM_MODEL") or fallback
+
+
+def _local_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    key = os.environ.get("LOCAL_LLM_API_KEY")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def _local_timeout() -> int:
+    try:
+        return int(os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", "180") or 180)
+    except ValueError:
+        return 180
+
+
+def _local_retries() -> int:
+    try:
+        return max(1, int(os.environ.get("LOCAL_LLM_RETRIES", "1") or 1))
+    except ValueError:
+        return 1
+
+
+def _local_use_json_schema() -> bool:
+    return os.environ.get("LOCAL_LLM_USE_JSON_SCHEMA", "false").strip().lower() in ("1", "true", "yes")
+
+
+def using_local_backend() -> bool:
+    return _force_backend() == "local"
+
+
+def llm_available(api_key: Optional[str] = None) -> bool:
+    if using_local_backend():
+        return bool(_local_base_url() and _local_model(""))
+    return bool(api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
 
 def _dry_run_response(*, model: str, parsed: bool, output_format: Optional[Type[BaseModel]]) -> RouterResponse:
@@ -246,6 +300,209 @@ def _api_parse(*, model: str, max_tokens: int, system: str, messages: list,
         },
         "parsed_output": resp.parsed_output,
     }
+
+
+# ---------------------------------------------------------------------------
+# Local backend (OpenAI-compatible; no Anthropic API usage)
+# ---------------------------------------------------------------------------
+
+def _system_to_text(system: Any) -> str:
+    if isinstance(system, str):
+        return system
+    if isinstance(system, list):
+        return "\n".join(
+            (b.get("text") if isinstance(b, dict) else getattr(b, "text", "")) or ""
+            for b in system
+            if (isinstance(b, dict) and b.get("type") == "text")
+            or getattr(b, "type", None) == "text"
+        )
+    return str(system or "")
+
+
+def _anthropic_messages_to_openai(messages: list) -> list[dict]:
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content")
+        if isinstance(content, str):
+            out.append({"role": role, "content": content})
+            continue
+
+        if not isinstance(content, list):
+            out.append({"role": role, "content": str(content)})
+            continue
+
+        text_parts: list[str] = []
+        tool_calls: list[dict] = []
+        tool_results: list[dict] = []
+        for block in content:
+            btype = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+            if btype == "text":
+                text_parts.append((block.get("text") if isinstance(block, dict) else getattr(block, "text", "")) or "")
+            elif btype == "tool_use":
+                name = block.get("name") if isinstance(block, dict) else getattr(block, "name", "")
+                raw_input = block.get("input") if isinstance(block, dict) else getattr(block, "input", {})
+                tool_id = block.get("id") if isinstance(block, dict) else getattr(block, "id", f"call_{len(tool_calls)}")
+                tool_calls.append({
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(raw_input or {}, default=str),
+                    },
+                })
+            elif btype == "tool_result":
+                tool_id = block.get("tool_use_id") if isinstance(block, dict) else getattr(block, "tool_use_id", "")
+                result_content = block.get("content") if isinstance(block, dict) else getattr(block, "content", "")
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tool_id,
+                    "content": result_content if isinstance(result_content, str) else json.dumps(result_content, default=str),
+                })
+
+        if tool_results:
+            out.extend(tool_results)
+            continue
+
+        msg: dict[str, Any] = {"role": role, "content": "\n".join(text_parts) if text_parts else None}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        out.append(msg)
+    return out
+
+
+def _tools_to_openai(tools: Optional[list]) -> Optional[list]:
+    if not tools:
+        return None
+    converted = []
+    for tool in tools:
+        converted.append({
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+            },
+        })
+    return converted
+
+
+def _local_post(payload: dict) -> dict:
+    url = f"{_local_base_url()}/chat/completions"
+    last_error: Exception | None = None
+    for attempt in range(_local_retries()):
+        try:
+            resp = requests.post(url, headers=_local_headers(), json=payload, timeout=_local_timeout())
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:
+            last_error = exc
+            if attempt < _local_retries() - 1:
+                time.sleep(2)
+    raise RuntimeError(f"Local LLM request failed: {last_error}") from last_error
+
+
+def _local_usage(data: dict) -> dict:
+    usage = data.get("usage") or {}
+    return {
+        "input_tokens": usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0) or 0,
+        "output_tokens": usage.get("completion_tokens", 0) or usage.get("output_tokens", 0) or 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    }
+
+
+def _local_create(*, model: str, max_tokens: int, system: Any, messages: list,
+                  tools: Optional[list], thinking: Optional[dict]) -> dict:
+    local_messages = [{"role": "system", "content": _system_to_text(system)}]
+    local_messages.extend(_anthropic_messages_to_openai(messages))
+    payload: dict[str, Any] = {
+        "model": _local_model(model),
+        "messages": local_messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+    }
+    openai_tools = _tools_to_openai(tools)
+    if openai_tools:
+        payload["tools"] = openai_tools
+        payload["tool_choice"] = "auto"
+
+    data = _local_post(payload)
+    msg = data["choices"][0]["message"]
+    content = []
+    if msg.get("content"):
+        content.append(SimpleNamespace(type="text", text=msg["content"]))
+    for i, call in enumerate(msg.get("tool_calls") or []):
+        fn = call.get("function") or {}
+        args_raw = fn.get("arguments") or "{}"
+        try:
+            args = json.loads(args_raw)
+        except json.JSONDecodeError:
+            args = {}
+        content.append(SimpleNamespace(
+            type="tool_use",
+            id=call.get("id") or f"call_{i}",
+            name=fn.get("name", ""),
+            input=args,
+        ))
+    stop_reason = "tool_use" if any(getattr(b, "type", None) == "tool_use" for b in content) else "end_turn"
+    return {
+        "content": content,
+        "stop_reason": stop_reason,
+        "usage": _local_usage(data),
+    }
+
+
+def _local_parse(*, model: str, max_tokens: int, system: str, messages: list,
+                 output_format: Type[BaseModel]) -> dict:
+    schema_json = json.dumps(output_format.model_json_schema(), indent=2)
+    local_system = (
+        f"{system}\n\n"
+        "Respond with ONLY raw JSON matching this JSON Schema. "
+        "No markdown, no prose, no code fences.\n"
+        f"{schema_json}"
+    )
+    local_messages = [{"role": "system", "content": local_system}]
+    local_messages.extend(_anthropic_messages_to_openai(messages))
+    payload: dict[str, Any] = {
+        "model": _local_model(model),
+        "messages": local_messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }
+    if _local_use_json_schema():
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "hogtron_output", "schema": output_format.model_json_schema(), "strict": True},
+        }
+
+    schema_failures = 0
+    last_text = ""
+    last_usage = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    for attempt in range(2):
+        data = _local_post(payload)
+        last_usage = _local_usage(data)
+        last_text = data["choices"][0]["message"].get("content") or ""
+        json_str = _extract_json(last_text)
+        if not json_str:
+            schema_failures += 1
+        else:
+            try:
+                parsed = output_format.model_validate_json(json_str)
+                return {
+                    "content": [SimpleNamespace(type="text", text=last_text)],
+                    "text": last_text,
+                    "stop_reason": "end_turn",
+                    "usage": last_usage,
+                    "parsed_output": parsed,
+                    "schema_failures": schema_failures,
+                }
+            except ValidationError:
+                schema_failures += 1
+        payload["messages"].append({"role": "user", "content": "Your last response did not match the schema. Reply again with only valid raw JSON."})
+
+    raise RuntimeError(f"Local LLM schema validation failed twice. Last response: {last_text[:300]!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +641,31 @@ def route_messages_parse(
         return resp
 
     t_start = time.time()
+    if _force_backend() == "local":
+        raw = _local_parse(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            output_format=output_format,
+        )
+        response = RouterResponse(
+            content=raw["content"],
+            text=raw["text"],
+            stop_reason=raw["stop_reason"],
+            usage=raw["usage"],
+            parsed_output=raw["parsed_output"],
+            backend="local",
+            used_subscription=False,
+            fallback_reason=None,
+            elapsed_sec=time.time() - t_start,
+            retries=0,
+            schema_failures=raw.get("schema_failures", 0),
+            estimated_api_cost_usd=0.0,
+            model=_local_model(model),
+        )
+        _emit_telemetry(agent, response)
+        return response
 
     if quota_gate.should_try_subscription() and _credentials_present():
         try:
@@ -567,6 +849,32 @@ def route_messages_create(
         return resp
 
     t_start = time.time()
+    if _force_backend() == "local":
+        raw = _local_create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+            tools=tools,
+            thinking=thinking,
+        )
+        response = RouterResponse(
+            content=raw["content"],
+            text="",
+            stop_reason=raw["stop_reason"],
+            usage=raw["usage"],
+            parsed_output=None,
+            backend="local",
+            used_subscription=False,
+            fallback_reason=None,
+            elapsed_sec=time.time() - t_start,
+            retries=0,
+            schema_failures=0,
+            estimated_api_cost_usd=0.0,
+            model=_local_model(model),
+        )
+        _emit_telemetry(agent, response)
+        return response
 
     # Phase 0: API-only for tool loops. Max path requires per-iteration
     # translation between SDK shapes and anthropic content blocks, which is
@@ -609,6 +917,9 @@ def describe_routing_decision() -> dict:
     return {
         "HOGTRON_TRY_MAX": os.environ.get("HOGTRON_TRY_MAX", "false"),
         "HOGTRON_FORCE_BACKEND": os.environ.get("HOGTRON_FORCE_BACKEND", ""),
+        "HOGTRON_LLM_BACKEND": os.environ.get("HOGTRON_LLM_BACKEND", ""),
+        "LOCAL_LLM_BASE_URL": _local_base_url(),
+        "LOCAL_LLM_MODEL": os.environ.get("LOCAL_LLM_MODEL", ""),
         "HOGTRON_DRY_RUN": os.environ.get("HOGTRON_DRY_RUN", ""),
         "anthropic_api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "credentials_present": _credentials_present(),

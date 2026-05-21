@@ -22,7 +22,7 @@ import os
 
 from pydantic import BaseModel, Field
 
-from .._shared.claude_router import route_messages_parse
+from .._shared.claude_router import llm_available, route_messages_parse
 from .briefs import MarketingBrief, MarketingAsset
 
 
@@ -146,10 +146,10 @@ def review_response(brief: MarketingBrief) -> MarketingAsset:
     author = brief.payload.get("author") or "Guest"
 
     key = brief.context.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    if not llm_available(key):
         return MarketingAsset(
             kind="review_response",
-            metadata={"error": "ANTHROPIC_API_KEY not set"},
+            metadata={"error": "No LLM backend configured"},
         )
     model = brief.context.get("model") or "claude-sonnet-4-6"
 

@@ -207,7 +207,7 @@ def build_tools(research_instance) -> list[AgentTool]:
                     "url": {"type": "string"},
                     "provider": {
                         "type": "string",
-                        "enum": ["gemini", "anthropic", "xai"],
+                        "enum": ["gemini", "anthropic", "xai", "local"],
                         "default": "anthropic",
                     },
                 },
