@@ -9,6 +9,7 @@ from typing import Callable, Optional
 
 from .briefs import SalesBrief, SalesAsset, SalesKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
+from .._shared.entitlements import require_agent_enabled
 from . import _aggregator_audit_report, _autonomous
 
 Handler = Callable[["Sales", SalesBrief], SalesAsset]
@@ -28,6 +29,7 @@ class Sales:
         }
 
     def build(self, brief: SalesBrief) -> SalesAsset:
+        require_agent_enabled(brief.context, "sales")
         handler = self._handlers.get(brief.kind)
         if handler is None:
             raise ValueError(f"Sales has no handler for kind={brief.kind!r}")

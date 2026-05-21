@@ -1,0 +1,273 @@
+# Hogtron Agent Catalog — DRAFT
+#
+# Single source of truth for what agents exist, which are sellable today,
+# what they need to run, and a placeholder for pricing. The customer-facing
+# Dashboard reads this to render the agent picker; Stripe products will be
+# generated from it; entitlement checks key off `id`.
+#
+# Conventions
+# -----------
+#   id                       slug, stable forever (used in DB + Stripe metadata)
+#   name                     customer-facing brand name
+#   tagline                  one-line elevator pitch (≤80 chars)
+#   description              2-3 sentences for the catalog card
+#   audience                 customer_facing | factory_internal | internal_only
+#   maturity                 production | beta | scaffold | planned
+#   library_module           dotted import path of the department package
+#   capabilities             list of Kind values from briefs.py
+#   required_integrations    must be configured before the agent runs
+#   optional_integrations    unlock additional capabilities if configured
+#   pricing.monthly_usd      placeholder — argue with these numbers
+#   pricing.included_tokens  monthly token quota included in base price
+#   pricing.overage_per_mtok USD per 1M tokens over the included quota
+#
+# Maturity definitions
+# --------------------
+#   production    every advertised capability has a working handler, end-to-end
+#                 verified, safe to put in front of a paying customer
+#   beta          works for at least one tenant (Hogtron itself) but rough
+#                 edges; ship with a "Beta" badge and lower price
+#   scaffold      types defined, handlers stubbed or partial — not sellable
+#   planned       in briefs.py comments but not implemented
+#
+# Names
+# -----
+# Use the existing names from the codebase exactly: Sentinel, Herald,
+# Research, Sales, Creative, Ledger, Operations, CEO. No rebrands.
+
+version: 1
+generated_at: 2026-05-20
+notes:
+  - All prices in USD/month, billed monthly, no contract.
+  - Included-token quotas assume Anthropic Sonnet 4.6 pricing as of catalog date.
+  - Overage rate is what the customer pays; our cost is lower — margin lives there.
+  - Factory capabilities (shirt, etsy_listing, printify_upload, etc.) live in
+    the same Python modules but are NOT in this catalog — they're Hogtron's
+    internal POD operation and never exposed to customers.
+  - Entitlement: each customer-facing department checks
+    `agents_enabled.<flag>` on the tenant config (via
+    `_shared/entitlements.py`) before dispatching. A tenant who hasn't
+    subscribed to Research gets `AgentNotEntitled` instead of work.
+
+# =============================================================================
+# CUSTOMER-FACING AGENTS — these get Stripe products + appear in the catalog UI
+# =============================================================================
+customer_facing:
+
+  - id: sentinel
+    name: Sentinel
+    tagline: "Your AI concierge — appointments, intake forms, and review replies"
+    description: >
+      Sentinel handles the small-business front desk: finds calendar slots,
+      books and reschedules appointments, captures and scores leads from your
+      website forms, and drafts responses to Google reviews under your
+      tenant-defined approval rules. Designed for service businesses (clinics,
+      studios, contractors) where someone is currently doing this manually.
+    audience: customer_facing
+    maturity: production
+    library_module: hogtron_agents.sentinel
+    capabilities:
+      # scheduling
+      - find_slot
+      - book_appointment
+      - reschedule
+      - cancel
+      - check_conflicts
+      # intake / leads
+      - ingest_intake_form
+      - ingest_capacity_audit
+      - ingest_contact_form
+      - score_lead
+      # reviews
+      - respond_to_reviews
+    planned_capabilities:
+      - route_inquiry
+      - summarize_intake
+      - send_confirmation
+      - send_reminder
+      - send_followup
+      - escalate_to_human
+      - quote_deposit
+    required_integrations:
+      - calendar              # Google Calendar (or generic CalendarProvider)
+      - tenant_config_store   # FileTenantConfigLoader by default
+    optional_integrations:
+      - google_business_profile   # required for respond_to_reviews
+      - slack                     # intake notifications
+      - herald                    # delegates review-response drafting
+    pricing:
+      monthly_usd: 149
+      included_tokens: 750_000
+      overage_per_mtok: 8
+
+  - id: herald
+    name: Herald
+    tagline: "Social media manager — calendars, captions, hashtags, on-brand voice"
+    description: >
+      Herald plans a content calendar across IG/Pinterest/TikTok/etc., writes
+      captions in your brand voice with hook-formula variety, repurposes a
+      single source asset into platform-native posts, and quality-gates drafts
+      against your brand rules. Does not publish (that's a separate add-on);
+      output is approval-ready drafts.
+    audience: customer_facing
+    maturity: production
+    library_module: hogtron_agents.marketing.social_media_manager
+    # Also reachable via MarketingKind: content_calendar, caption, repurpose,
+    # hashtag_pack, brand_review (wrapper handlers in marketing.py).
+    capabilities:
+      - content_calendar
+      - caption
+      - repurpose
+      - hashtag_pack
+      - brand_review
+      - blog_post
+      - ad_copy
+      - email_outreach
+      - review_response   # drafts only; Sentinel orchestrates posting
+    required_integrations:
+      - tenant_voice_vault   # the brand voice context block
+    optional_integrations:
+      - canva               # repurpose into Canva-ready assets
+      - anvil               # future: hand off to ANVIL publisher
+    pricing:
+      monthly_usd: 99
+      included_tokens: 1_500_000   # content-writing is the heaviest token user
+      overage_per_mtok: 8
+
+  - id: research
+    name: Research
+    tagline: "SEO + competitor research — audits, local leads, platform presence"
+    description: >
+      Research audits a domain for SEO and GEO (geographic/local) factors,
+      maps which platforms a business is on (Google, Yelp, aggregators),
+      and finds prospect leads by location via Google Places + OSM. Output
+      is a scored report + a list of concrete fixes.
+    audience: customer_facing
+    maturity: production
+    library_module: hogtron_agents.research
+    capabilities:
+      - seo_audit
+      - geo_audit
+      - platform_presence
+      - find_leads
+    required_integrations:
+      - google_places_api
+    optional_integrations:
+      - gemini_api    # alternate provider for some audits
+      - xai_api       # alternate provider for some audits
+    pricing:
+      monthly_usd: 79
+      included_tokens: 400_000
+      overage_per_mtok: 8
+
+  - id: sales
+    name: Sales
+    tagline: "Sales follow-through — proposals, quotes, contracts, follow-ups"
+    description: >
+      Sales drafts customized proposals (10-page template), aggregator-audit
+      reports for restaurants/service businesses, tiered pricing quotes,
+      contract fills, and follow-up messages when a prospect goes quiet.
+      Pairs well with Research (Research finds the lead → Sales pitches it).
+    audience: customer_facing
+    maturity: beta   # works, tested with Hogtron's own deals, polish needed
+    library_module: hogtron_agents.sales
+    capabilities:
+      - proposal
+      - aggregator_audit_report
+      - follow_up
+      - pricing_quote
+      - contract
+    required_integrations:
+      - tenant_config_store   # services list, pricing tiers, contract template
+    optional_integrations:
+      - research              # consume audit findings into proposals
+      - pdf_renderer          # render proposals to PDF
+    pricing:
+      monthly_usd: 89
+      included_tokens: 500_000
+      overage_per_mtok: 8
+
+  - id: creative
+    name: Creative
+    tagline: "Visual mockups + proposal covers for client work"
+    description: >
+      Creative produces visual deliverables for agency-style client work:
+      website mockups, proposal cover art, and Canva-driven assets (logos,
+      social graphics). The shirt/PDF capabilities in this department are
+      Factory-internal (Hogtron's own POD work) and live in the Factory
+      Pack bundle, not in the customer-facing Creative SKU.
+    audience: customer_facing
+    maturity: beta
+    library_module: hogtron_agents.creative
+    capabilities:
+      - mockup
+      - proposal_cover
+      - canva_asset
+    required_integrations:
+      - image_provider   # Recraft (already in _shared/recraft.py)
+    optional_integrations:
+      - canva
+      - storage          # Supabase/S3 for finished assets
+    pricing:
+      monthly_usd: 69
+      included_tokens: 200_000
+      overage_per_mtok: 8
+      # Note: image-generation API costs are *separate* from token costs —
+      # Recraft credits are a passthrough line item, not bundled.
+
+# =============================================================================
+# INTERNAL-ONLY AGENTS — Hogtron operations, never customer-facing
+# =============================================================================
+internal_only:
+
+  - id: ceo
+    name: CEO Loop
+    tagline: "Sean + Anthony's voice; fans out across departments"
+    audience: internal_only
+    maturity: production
+    library_module: hogtron_agents.ceo
+    why_internal: >
+      Embeds founders' voice and consolidates findings across all departments.
+      Not a product surface — it's the orchestration brain.
+
+  - id: ledger
+    name: Ledger
+    tagline: "Internal financial state — P&L, AR, cost attribution"
+    audience: internal_only
+    maturity: production
+    library_module: hogtron_agents.ledger
+    why_internal: >
+      Reads PayPal/Anthropic/Railway, writes only to internal Supabase
+      ledger_* tables. By design, never touches external customer surfaces.
+
+  - id: operations_agency
+    name: Operations (Agency)
+    tagline: "Infrastructure publishing — Railway deploys for mockups + proposals"
+    audience: internal_only
+    maturity: production
+    library_module: hogtron_agents.operations
+    capabilities_for_customers:
+      # If we later ship a self-hosted mode, these become irrelevant —
+      # the customer's hosting handles it. In hosted SaaS, this stays
+      # inside Hogtron infra.
+      - deploy_mockup
+      - deploy_proposal
+
+# =============================================================================
+# OPEN QUESTIONS — resolve before generating Stripe products
+# =============================================================================
+open_questions:
+  - id: anvil_publisher
+    question: >
+      ANVIL is referenced as the future publisher (Herald drafts, ANVIL posts).
+      Should ANVIL be a separate SKU or an add-on to Herald?
+  - id: image_credits
+    question: >
+      Atelier passes through Recraft image-generation costs. Should those be
+      separately metered like tokens (included quota + overage), or just
+      billed as a usage line item with no quota?
+  - id: launch_set
+    question: >
+      Launch with all 5 customer-facing agents at once, or stagger? My
+      instinct: launch Sentinel + Herald (both production-maturity), keep
+      Research / Sales / Creative in beta-access waitlist until production.

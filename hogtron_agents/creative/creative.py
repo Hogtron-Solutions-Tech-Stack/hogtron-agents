@@ -13,6 +13,7 @@ from typing import Callable, Optional
 
 from .briefs import CreativeBrief, CreativeAsset, BriefKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
+from .._shared.entitlements import require_agent_enabled
 from . import _shirt, _mockup, _autonomous
 
 Handler = Callable[["Creative", CreativeBrief], CreativeAsset]
@@ -32,6 +33,7 @@ class Creative:
         }
 
     def design(self, brief: CreativeBrief) -> CreativeAsset:
+        require_agent_enabled(brief.context, "creative")
         handler = self._handlers.get(brief.kind)
         if handler is None:
             raise ValueError(f"Creative has no handler for kind={brief.kind!r}")

@@ -10,6 +10,7 @@ from typing import Callable, Optional
 
 from .briefs import MarketingBrief, MarketingAsset, MarketingKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
+from .._shared.entitlements import require_agent_enabled
 from . import _etsy_listing, _social_post, _review_response, _autonomous
 from .social_media_manager import SocialMediaManager, SocialBrief
 
@@ -40,6 +41,7 @@ class Marketing:
         }
 
     def write(self, brief: MarketingBrief) -> MarketingAsset:
+        require_agent_enabled(brief.context, "marketing")
         handler = self._handlers.get(brief.kind)
         if handler is None:
             raise ValueError(f"Marketing has no handler for kind={brief.kind!r}")

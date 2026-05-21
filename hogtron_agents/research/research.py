@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .briefs import ResearchBrief, ResearchFinding, ResearchKind
 from .._shared.telemetry import TelemetrySink, NullSink, working
+from .._shared.entitlements import require_agent_enabled
 from . import (
     _ip_clear, _geo_audit, _platform_presence, _seo_audit,
     _cluster_concepts, _trend_signals, _find_leads,
@@ -43,6 +44,7 @@ class Research:
         }
 
     def do(self, brief: ResearchBrief) -> ResearchFinding:
+        require_agent_enabled(brief.context, "research")
         handler = self._handlers.get(brief.kind)
         if handler is None:
             raise ValueError(f"Research has no handler for kind={brief.kind!r}")
