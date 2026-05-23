@@ -78,8 +78,30 @@ my_obj: MyPydanticSchema = resp.parsed_output
 | `LOCAL_LLM_TIMEOUT_SECONDS` | HTTP timeout | `180` |
 | `LOCAL_LLM_RETRIES` | Retry attempts | `1` |
 | `LOCAL_LLM_USE_JSON_SCHEMA` | Use json_schema response_format (only some backends support this) | `false` |
+| `HOGTRON_FALLBACK_PROVIDERS` | Comma-separated cloud fallback order after Anthropic | `gemini,xai` |
+| `XAI_API_KEY` / `XAI_MODEL` | xAI fallback key + model | model `grok-4-fast-non-reasoning` |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini fallback key + model (OpenAI-compat endpoint) | model `gemini-2.5-flash` |
+| `HOGTRON_API_COOLDOWN_SEC` | How long to skip Anthropic after a credit-exhaustion error | `900` |
 
 To run an agent fully locally: set `HOGTRON_FORCE_BACKEND=local` + `LOCAL_LLM_MODEL=qwen2.5:3b` and start Ollama. Nothing else changes.
+
+## Cross-provider fallback (Anthropic → Gemini → xAI)
+
+When the **Anthropic API path** fails because the account is **out of credits**
+(HTTP 400 "credit balance is too low"), is **rate-limited** (429), hits a **5xx**,
+or the connection drops, the router automatically retries the same request on
+the cloud fallback providers — Gemini, then xAI — using its existing
+OpenAI-compatible translation layer (so tool loops and structured output both
+work). A bad API key or a malformed-request 400 does **not** fall back (it would
+fail identically everywhere).
+
+To avoid eating a dead Anthropic round-trip on every call once credits run dry,
+a file-backed **circuit breaker** (`provider_breaker.py`) records the
+credit-exhaustion error and sends subsequent calls straight to the fallback for
+`HOGTRON_API_COOLDOWN_SEC`; a successful Anthropic call clears it. The fallback
+is a no-op when no `XAI_API_KEY` / `GEMINI_API_KEY` is set — the router stays
+Anthropic-only, exactly as before. The response's `backend` field reports which
+provider actually answered (`api` / `max` / `local` / `gemini` / `xai`).
 
 > **Hardware note:** the primary dev machine has ~7.9 GB RAM. `qwen2.5:14b` will not load. Default to `qwen2.5:3b` unless you've checked the host.
 
@@ -88,7 +110,7 @@ To run an agent fully locally: set `HOGTRON_FORCE_BACKEND=local` + `LOCAL_LLM_MO
 These bypass the router on purpose. Don't route them through `claude_router`.
 
 1. **`Hogtron-Dashboard/tools/seo_package/agent_runner.py`** — uses the **Claude Agent SDK** (`claude_agent_sdk`), which only speaks to the real Anthropic API. The SDK runs plugins, slash commands, and tool-use loops that local Ollama cannot reproduce. The file refuses to run when `HOGTRON_FORCE_BACKEND=local` (see [`agent_runner.py:29-33`](../../Hogtron-Dashboard/tools/seo_package/agent_runner.py)). That guard **is** the protocol-compliant behavior for this module.
-2. **Gemini / xAI providers** in the SEO audit tools — `_call_gemini` and `_call_xai` hit Google and xAI directly. They are not Anthropic-shaped and the router doesn't know how to dispatch them. Leave them as raw HTTP.
+2. **Gemini / xAI providers** in the SEO audit tools — `_call_gemini` and `_call_xai` in `tools/seo_audit.py` and `tools/combined_seo_geo_audit.py` (and the standalone Geo-Auditor service) hit Google and xAI directly as their *primary* analysis path, selected by `SEO_AUDIT_PROVIDER`. Those callers stay raw HTTP. Note this is distinct from the router's own Gemini/xAI **fallback**: the router now does know how to dispatch them (via its OpenAI-compatible layer) when an Anthropic call fails — but only as a fallback for Anthropic-shaped calls, not as a primary provider you select.
 
 If you find another bypass that isn't on this list, it's a bug — route it through `claude_router` and add a memory entry so the next session remembers.
 
@@ -105,3 +127,4 @@ The only matches should be inside `claude_router.py` itself. Anything else is a 
 ## History
 
 - 2026-05-20 — Dashboard `tools/seo_audit.py` and `tools/combined_seo_geo_audit.py` and agents `research/_seo_audit.py` migrated off direct HTTP onto the router. `Hogtron-Dashboard/tools/llm_router.py` (a parallel mini-router) was deleted; the shared `claude_router` now handles local mode too.
+- 2026-05-23 — Added cross-provider fallback to the router: on Anthropic credit-exhaustion / rate-limit / 5xx / connection failure, both `route_messages_parse` and `route_messages_create` retry on Gemini then xAI via the OpenAI-compatible layer. New `provider_breaker.py` circuit breaker skips Anthropic for `HOGTRON_API_COOLDOWN_SEC` after a credit-exhaustion 400. Dashboard `seo_audit.py` / `combined_seo_geo_audit.py` also gained their own primary-provider fallback chain (they were single-provider and 400'd when Anthropic credits ran out).

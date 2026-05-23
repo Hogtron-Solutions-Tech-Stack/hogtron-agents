@@ -4,6 +4,8 @@
 
 **All Anthropic-shaped LLM calls go through `hogtron_agents/_shared/claude_router.py`.** Do not write `anthropic.Anthropic(...)` clients or raw `requests.post("https://api.anthropic.com/...")` calls anywhere else. Direct calls silently defeat `HOGTRON_FORCE_BACKEND=local` and burn API tokens during local-mode sessions.
 
+The router also owns **cross-provider fallback**: when Anthropic is out of credits (or rate-limited / 5xx / down), it retries the call on Gemini then xAI via its OpenAI-compatible layer, with a circuit breaker (`provider_breaker.py`) that skips Anthropic for a cooldown after a credit-exhaustion 400. This is why nothing else should call Gemini/xAI for an Anthropic-shaped request — let the router handle the fallback.
+
 Full protocol, code patterns, env vars, and known carve-outs: [`docs/LLM_PROTOCOL.md`](docs/LLM_PROTOCOL.md).
 
 Quick check before committing:

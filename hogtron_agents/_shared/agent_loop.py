@@ -240,7 +240,9 @@ def run_agent_loop(
                 api_key=api_key,
                 **kwargs,
             )
-        except anthropic.APIError as e:
+        except (anthropic.APIError, RuntimeError) as e:
+            # RuntimeError covers the router exhausting every fallback provider
+            # (xAI/Gemini) after Anthropic was unavailable.
             return AgentResult(
                 success=False,
                 final_message="",
@@ -252,7 +254,7 @@ def run_agent_loop(
                 cache_read_tokens=total_cache_read,
                 duration_sec=time.time() - t_start,
                 stop_reason="error",
-                error=f"Anthropic API error: {e}",
+                error=f"LLM call failed: {e}",
             )
 
         total_input  += int(resp.usage.get("input_tokens", 0) or 0)

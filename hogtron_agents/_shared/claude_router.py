@@ -39,6 +39,7 @@ import requests
 from pydantic import BaseModel, ValidationError
 
 from . import quota_gate
+from . import provider_breaker
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +203,114 @@ def _local_use_json_schema() -> bool:
 
 def using_local_backend() -> bool:
     return _force_backend() == "local"
+
+
+@dataclass
+class _OpenAICompatProvider:
+    """An OpenAI-compatible chat endpoint. Drives both the local Ollama backend
+    and the cloud fallback providers (xAI, Gemini) — they all speak the same
+    /chat/completions shape, so the anthropic<->openai translation below is
+    written once and reused."""
+    name: str
+    base_url: str
+    model: str
+    api_key: str = ""
+    timeout: int = 180
+    retries: int = 1
+    use_json_schema: bool = False
+
+
+def _local_provider(model_fallback: str) -> _OpenAICompatProvider:
+    return _OpenAICompatProvider(
+        name="local",
+        base_url=_local_base_url(),
+        model=_local_model(model_fallback),
+        api_key=os.environ.get("LOCAL_LLM_API_KEY", ""),
+        timeout=_local_timeout(),
+        retries=_local_retries(),
+        use_json_schema=_local_use_json_schema(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cloud fallback providers (xAI, Gemini) — used when the Anthropic API path
+# fails because credits are exhausted (or it's rate-limited / 5xx / down).
+# Both speak the OpenAI-compatible chat API, so they ride the same translation
+# layer as the local backend. Order is env-tunable; default mirrors the audit
+# tools (Anthropic -> Gemini -> Grok).
+# ---------------------------------------------------------------------------
+
+_FALLBACK_SPECS = {
+    "gemini": {
+        "base_url":      "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_env":       "GEMINI_API_KEY",
+        "model_env":     "GEMINI_MODEL",
+        "model_default": "gemini-2.5-flash",
+    },
+    "xai": {
+        "base_url":      "https://api.x.ai/v1",
+        "key_env":       "XAI_API_KEY",
+        "model_env":     "XAI_MODEL",
+        "model_default": "grok-4-fast-non-reasoning",
+    },
+}
+
+
+def _fallback_order() -> list[str]:
+    raw = os.environ.get("HOGTRON_FALLBACK_PROVIDERS", "gemini,xai")
+    return [p.strip().lower() for p in raw.split(",") if p.strip()]
+
+
+def _fallback_providers() -> list[_OpenAICompatProvider]:
+    """Ordered, key-present cloud providers to try after Anthropic. Empty when
+    no fallback keys are configured — in which case the router behaves exactly
+    as before (Anthropic-only)."""
+    out: list[_OpenAICompatProvider] = []
+    for name in _fallback_order():
+        spec = _FALLBACK_SPECS.get(name)
+        if not spec:
+            continue
+        key = os.environ.get(spec["key_env"], "")
+        if not key:
+            continue
+        out.append(_OpenAICompatProvider(
+            name=name,
+            base_url=spec["base_url"],
+            model=os.environ.get(spec["model_env"]) or spec["model_default"],
+            api_key=key,
+            timeout=_local_timeout(),
+            retries=1,
+        ))
+    return out
+
+
+def _is_credit_exhaustion(exc: Exception) -> bool:
+    """Anthropic returns HTTP 400 with a 'credit balance is too low' message
+    when the account is out of credits — distinct from a malformed-request 400."""
+    msg = str(exc).lower()
+    return "credit balance" in msg or "billing" in msg or "plans & billing" in msg
+
+
+def _should_fallback(exc: Exception) -> bool:
+    """Is this Anthropic failure recoverable by trying another provider?
+
+    Yes for credit exhaustion, rate limits, server errors, and connection
+    problems. No for bad API keys or malformed requests — those fail the same
+    way everywhere (or are our own bug), so falling back just hides them."""
+    if isinstance(exc, (anthropic.AuthenticationError,
+                        anthropic.PermissionDeniedError,
+                        anthropic.NotFoundError)):
+        return False
+    if isinstance(exc, anthropic.BadRequestError):
+        return _is_credit_exhaustion(exc)
+    if isinstance(exc, (anthropic.RateLimitError,
+                        anthropic.InternalServerError,
+                        anthropic.APIConnectionError,
+                        anthropic.APITimeoutError)):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return getattr(exc, "status_code", 0) >= 500
+    return False
 
 
 def llm_available(api_key: Optional[str] = None) -> bool:
@@ -387,19 +496,23 @@ def _tools_to_openai(tools: Optional[list]) -> Optional[list]:
     return converted
 
 
-def _local_post(payload: dict) -> dict:
-    url = f"{_local_base_url()}/chat/completions"
+def _openai_post(provider: _OpenAICompatProvider, payload: dict) -> dict:
+    url = f"{provider.base_url.rstrip('/')}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if provider.api_key:
+        headers["Authorization"] = f"Bearer {provider.api_key}"
+    retries = max(1, provider.retries)
     last_error: Exception | None = None
-    for attempt in range(_local_retries()):
+    for attempt in range(retries):
         try:
-            resp = requests.post(url, headers=_local_headers(), json=payload, timeout=_local_timeout())
+            resp = requests.post(url, headers=headers, json=payload, timeout=provider.timeout)
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:
             last_error = exc
-            if attempt < _local_retries() - 1:
+            if attempt < retries - 1:
                 time.sleep(2)
-    raise RuntimeError(f"Local LLM request failed: {last_error}") from last_error
+    raise RuntimeError(f"{provider.name} LLM request failed: {last_error}") from last_error
 
 
 def _local_usage(data: dict) -> dict:
@@ -414,10 +527,16 @@ def _local_usage(data: dict) -> dict:
 
 def _local_create(*, model: str, max_tokens: int, system: Any, messages: list,
                   tools: Optional[list], thinking: Optional[dict]) -> dict:
+    return _openai_create(_local_provider(model), max_tokens=max_tokens, system=system,
+                          messages=messages, tools=tools, thinking=thinking)
+
+
+def _openai_create(provider: _OpenAICompatProvider, *, max_tokens: int, system: Any,
+                   messages: list, tools: Optional[list], thinking: Optional[dict]) -> dict:
     local_messages = [{"role": "system", "content": _system_to_text(system)}]
     local_messages.extend(_anthropic_messages_to_openai(messages))
     payload: dict[str, Any] = {
-        "model": _local_model(model),
+        "model": provider.model,
         "messages": local_messages,
         "max_tokens": max_tokens,
         "temperature": 0.2,
@@ -427,7 +546,7 @@ def _local_create(*, model: str, max_tokens: int, system: Any, messages: list,
         payload["tools"] = openai_tools
         payload["tool_choice"] = "auto"
 
-    data = _local_post(payload)
+    data = _openai_post(provider, payload)
     msg = data["choices"][0]["message"]
     content = []
     if msg.get("content"):
@@ -455,6 +574,12 @@ def _local_create(*, model: str, max_tokens: int, system: Any, messages: list,
 
 def _local_parse(*, model: str, max_tokens: int, system: str, messages: list,
                  output_format: Type[BaseModel]) -> dict:
+    return _openai_parse(_local_provider(model), max_tokens=max_tokens, system=system,
+                         messages=messages, output_format=output_format)
+
+
+def _openai_parse(provider: _OpenAICompatProvider, *, max_tokens: int, system: str,
+                  messages: list, output_format: Type[BaseModel]) -> dict:
     schema_json = json.dumps(output_format.model_json_schema(), indent=2)
     local_system = (
         f"{system}\n\n"
@@ -465,13 +590,13 @@ def _local_parse(*, model: str, max_tokens: int, system: str, messages: list,
     local_messages = [{"role": "system", "content": local_system}]
     local_messages.extend(_anthropic_messages_to_openai(messages))
     payload: dict[str, Any] = {
-        "model": _local_model(model),
+        "model": provider.model,
         "messages": local_messages,
         "max_tokens": max_tokens,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
     }
-    if _local_use_json_schema():
+    if provider.use_json_schema:
         payload["response_format"] = {
             "type": "json_schema",
             "json_schema": {"name": "hogtron_output", "schema": output_format.model_json_schema(), "strict": True},
@@ -481,7 +606,7 @@ def _local_parse(*, model: str, max_tokens: int, system: str, messages: list,
     last_text = ""
     last_usage = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
     for attempt in range(2):
-        data = _local_post(payload)
+        data = _openai_post(provider, payload)
         last_usage = _local_usage(data)
         last_text = data["choices"][0]["message"].get("content") or ""
         json_str = _extract_json(last_text)
@@ -502,7 +627,7 @@ def _local_parse(*, model: str, max_tokens: int, system: str, messages: list,
                 schema_failures += 1
         payload["messages"].append({"role": "user", "content": "Your last response did not match the schema. Reply again with only valid raw JSON."})
 
-    raise RuntimeError(f"Local LLM schema validation failed twice. Last response: {last_text[:300]!r}")
+    raise RuntimeError(f"{provider.name} LLM schema validation failed twice. Last response: {last_text[:300]!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -698,29 +823,66 @@ def route_messages_parse(
     )
 
 
-def _do_parse_via_api(*, agent: str, model: str, system: str, messages: list,
-                      output_format: Type[BaseModel], max_tokens: int,
-                      api_key: Optional[str], t_start: float,
-                      fallback_reason: Optional[str]) -> RouterResponse:
-    raw = _api_parse(model=model, max_tokens=max_tokens, system=system,
-                     messages=messages, output_format=output_format, api_key=api_key)
+def _parse_response(*, agent: str, model: str, raw: dict, t_start: float,
+                    fallback_reason: Optional[str], backend: str, cost: float) -> RouterResponse:
     response = RouterResponse(
         content=raw["content"],
-        text=raw["text"],
+        text=raw.get("text", ""),
         stop_reason=raw["stop_reason"],
         usage=raw["usage"],
-        parsed_output=raw["parsed_output"],
-        backend="api",
+        parsed_output=raw.get("parsed_output"),
+        backend=backend,
         used_subscription=False,
         fallback_reason=fallback_reason,
         elapsed_sec=time.time() - t_start,
         retries=0,
-        schema_failures=0,
-        estimated_api_cost_usd=_estimate_cost_usd(model, raw["usage"]),
+        schema_failures=raw.get("schema_failures", 0),
+        estimated_api_cost_usd=cost,
         model=model,
     )
     _emit_telemetry(agent, response)
     return response
+
+
+def _do_parse_via_api(*, agent: str, model: str, system: str, messages: list,
+                      output_format: Type[BaseModel], max_tokens: int,
+                      api_key: Optional[str], t_start: float,
+                      fallback_reason: Optional[str]) -> RouterResponse:
+    providers = _fallback_providers()
+    skip_anthropic = bool(providers) and provider_breaker.anthropic_in_cooldown()
+    anthropic_exc: Optional[Exception] = None
+
+    if skip_anthropic:
+        fallback_reason = fallback_reason or "anthropic_cooldown"
+    else:
+        try:
+            raw = _api_parse(model=model, max_tokens=max_tokens, system=system,
+                             messages=messages, output_format=output_format, api_key=api_key)
+            provider_breaker.clear_anthropic_cooldown()
+            return _parse_response(agent=agent, model=model, raw=raw, t_start=t_start,
+                                   fallback_reason=fallback_reason, backend="api",
+                                   cost=_estimate_cost_usd(model, raw["usage"]))
+        except Exception as e:
+            if not (providers and _should_fallback(e)):
+                raise
+            anthropic_exc = e
+            if _is_credit_exhaustion(e):
+                provider_breaker.record_anthropic_exhausted(str(e)[:200])
+            fallback_reason = "anthropic_credit_exhausted" if _is_credit_exhaustion(e) else "anthropic_unavailable"
+
+    errors = []
+    for provider in providers:
+        try:
+            raw = _openai_parse(provider, max_tokens=max_tokens, system=system,
+                                messages=messages, output_format=output_format)
+            return _parse_response(agent=agent, model=provider.model, raw=raw, t_start=t_start,
+                                   fallback_reason=fallback_reason, backend=provider.name, cost=0.0)
+        except Exception as e:
+            errors.append(f"{provider.name}: {e}")
+
+    if anthropic_exc is not None:
+        raise anthropic_exc
+    raise RuntimeError("All LLM providers failed — " + " | ".join(errors))
 
 
 def _do_parse_via_max(*, agent: str, model: str, system: str, messages: list,
@@ -876,9 +1038,9 @@ def route_messages_create(
         _emit_telemetry(agent, response)
         return response
 
-    # Phase 0: API-only for tool loops. Max path requires per-iteration
-    # translation between SDK shapes and anthropic content blocks, which is
-    # Phase 2 work and explicitly optional per Sean's review.
+    # Phase 0: Max tool-loop translation is Phase 2 (conditional). Currently
+    # always-API for tool loops, with xAI/Gemini fallback when Anthropic is out
+    # of credits / unavailable.
     fallback_reason = None
     if (quota_gate.should_try_subscription()
             and _credentials_present()
@@ -886,22 +1048,69 @@ def route_messages_create(
         # Reserved flag for future Phase 2 work. Currently always-API.
         fallback_reason = "phase_2_not_enabled"
 
-    raw = _api_create(model=model, max_tokens=max_tokens, system=system,
-                      messages=messages, tools=tools, thinking=thinking,
-                      api_key=api_key)
+    return _do_create_via_api(
+        agent=agent, model=model, system=system, messages=messages,
+        tools=tools, thinking=thinking, max_tokens=max_tokens, api_key=api_key,
+        t_start=t_start, fallback_reason=fallback_reason,
+    )
+
+
+def _do_create_via_api(*, agent: str, model: str, system: Any, messages: list,
+                       tools: Optional[list], thinking: Optional[dict], max_tokens: int,
+                       api_key: Optional[str], t_start: float,
+                       fallback_reason: Optional[str]) -> RouterResponse:
+    providers = _fallback_providers()
+    skip_anthropic = bool(providers) and provider_breaker.anthropic_in_cooldown()
+    anthropic_exc: Optional[Exception] = None
+
+    if skip_anthropic:
+        fallback_reason = fallback_reason or "anthropic_cooldown"
+    else:
+        try:
+            raw = _api_create(model=model, max_tokens=max_tokens, system=system,
+                              messages=messages, tools=tools, thinking=thinking, api_key=api_key)
+            provider_breaker.clear_anthropic_cooldown()
+            return _create_response(agent=agent, model=model, raw=raw, t_start=t_start,
+                                    fallback_reason=fallback_reason, backend="api",
+                                    cost=_estimate_cost_usd(model, raw["usage"]))
+        except Exception as e:
+            if not (providers and _should_fallback(e)):
+                raise
+            anthropic_exc = e
+            if _is_credit_exhaustion(e):
+                provider_breaker.record_anthropic_exhausted(str(e)[:200])
+            fallback_reason = "anthropic_credit_exhausted" if _is_credit_exhaustion(e) else "anthropic_unavailable"
+
+    errors = []
+    for provider in providers:
+        try:
+            raw = _openai_create(provider, max_tokens=max_tokens, system=system,
+                                 messages=messages, tools=tools, thinking=thinking)
+            return _create_response(agent=agent, model=provider.model, raw=raw, t_start=t_start,
+                                    fallback_reason=fallback_reason, backend=provider.name, cost=0.0)
+        except Exception as e:
+            errors.append(f"{provider.name}: {e}")
+
+    if anthropic_exc is not None:
+        raise anthropic_exc
+    raise RuntimeError("All LLM providers failed — " + " | ".join(errors))
+
+
+def _create_response(*, agent: str, model: str, raw: dict, t_start: float,
+                     fallback_reason: Optional[str], backend: str, cost: float) -> RouterResponse:
     response = RouterResponse(
         content=raw["content"],
         text="",  # tool loops aggregate text per-iteration; caller can compute
         stop_reason=raw["stop_reason"],
         usage=raw["usage"],
         parsed_output=None,
-        backend="api",
+        backend=backend,
         used_subscription=False,
         fallback_reason=fallback_reason,
         elapsed_sec=time.time() - t_start,
         retries=0,
         schema_failures=0,
-        estimated_api_cost_usd=_estimate_cost_usd(model, raw["usage"]),
+        estimated_api_cost_usd=cost,
         model=model,
     )
     _emit_telemetry(agent, response)
@@ -926,6 +1135,9 @@ def describe_routing_decision() -> dict:
         "credentials_path": str(_credentials_path()),
         "quota_gate_should_try": quota_gate.should_try_subscription(),
         "quota_gate_state": quota_gate.state_snapshot(),
+        "fallback_providers": [p.name for p in _fallback_providers()],
+        "anthropic_in_cooldown": provider_breaker.anthropic_in_cooldown(),
+        "api_breaker_state": provider_breaker.snapshot(),
     }
 
 
